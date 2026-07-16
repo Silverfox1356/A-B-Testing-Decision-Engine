@@ -116,22 +116,6 @@ Notebook 04 downloads the Hillstrom CSV (~5 MB) into `data/` on first run.
   yields a real but tiny 0.04% variance reduction (rho = 0.02): the method is
   identical to the synthetic case; the covariate quality decides the gain.
 
-## An incident worth reading about
-
-Midway through Phase 3, the SHIP demo refused to pass: with a ZERO true
-order-value effect, treatment AOV kept landing ~2% below control across seeds.
-The diagnosis was post-treatment conditioning: one latent "user quality"
-factor drove both conversion propensity and order value, so lifting conversion
-pulled lower-quality marginal users into the treatment converter pool and
-mechanically depressed their average order value, silently consuming the
-entire 2% non-inferiority margin. The fix was a two-latent generator
-(purchase frequency vs basket value, independent), after which AOV is unbiased
-by construction; every Phase 1 and Phase 2 gate was re-run and passed. The
-industry lesson, applied in notebook 04: prefer ALL-USER metrics for
-guardrails; per-converter ratio metrics condition on a post-treatment variable
-and can show "harm" that is pure composition shift. Full story in
-`project_log.md` (local, gitignored) and summarized in notebook 04.
-
 ## Limitations and extensions
 
 - **CUPAC**: CUPED with a single covariate is the base case; predicting the
