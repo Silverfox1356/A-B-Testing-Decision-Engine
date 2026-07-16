@@ -1,6 +1,6 @@
 # Experimentation Decision Engine
 
-A/B testing project that goes past "p < 0.05, ship it". It covers power analysis, CUPED variance reduction, and a ship/no-ship decision engine that treats guardrail metrics seriously. I built this as a data science portfolio project, and since it's easy to fool yourself with statistics, every statistical claim in here is backed by a simulation-based validation script you can run yourself.
+A/B testing project that goes past "p < 0.05, ship it". It covers power analysis, CUPED variance reduction, and a ship/no-ship decision engine that treats guardrail metrics seriously. I built this as a data science portfolio project.
 
 ## Why I built it
 
