@@ -86,28 +86,17 @@ CUPED removes about 39% of revenue-per-user variance. That number is not a coinc
 
 ![Experiment duration by method](reports/figures/experiment_duration.png)
 
-- On the real Hillstrom experiment (Womens E-Mail vs No E-Mail), conversion
-  and visits improve decisively, the all-user spend guardrail clears its
-  margin, and the engine still says INVESTIGATE because the guardrail design
-  had only ~13% power. Real-data CUPED with a year-long history covariate
-  yields a real but tiny 0.04% variance reduction (rho = 0.02): the method is
-  identical to the synthetic case; the covariate quality decides the gain.
+On the real Hillstrom experiment (Womens E-Mail vs No E-Mail), conversion and visits improve decisively and the all-user spend guardrail clears its margin, yet the engine still says INVESTIGATE, because the guardrail design only had about 13% power. Honest verdict, and exactly the behaviour I wanted. Real-data CUPED with a year-long history covariate gives a real but tiny 0.04% variance reduction (rho = 0.02). The method is identical to the synthetic case; the covariate quality is what decides the gain.
 
-## Limitations and extensions
 
-- **CUPAC**: CUPED with a single covariate is the base case; predicting the
-  outcome from all pre-experiment features (CUPAC) is the natural upgrade and
-  would materially help the real-data case, where one year-long covariate
-  correlates at only 0.02 with two-week spend.
-- **Sequential testing**: this project analyzes fixed-horizon experiments;
-  production platforms add always-valid inference or group-sequential
-  boundaries so experiments can be peeked at safely.
-- **Heterogeneous treatment effects**: everything here estimates average
-  effects; segment-level analysis (HTE) is the standard next question after a
-  SHIP verdict.
-- **Guardrail power is expensive**: powering a 2% AOV margin needs ~13x the
-  traffic of the primary conversion test. Real teams widen margins, switch to
-  all-user formulations, or accept explicit Type II risk; the engine surfaces
-  the trade-off rather than hiding it.
-- The synthetic generator uses homogeneous treatment effects and independent
-  users; no network effects, novelty decay, or seasonality.
+## Limitations and what I'd build next
+
+CUPAC is the obvious upgrade. CUPED with a single covariate is the base case; predicting the outcome from all pre-experiment features would materially help the real-data case, where my one year-long covariate correlates at only 0.02 with two-week spend.
+
+This project analyzes fixed-horizon experiments only. Production platforms add always-valid inference or group-sequential boundaries so experiments can be peeked at safely, and that would be the next statistical layer to add.
+
+Everything here estimates average effects. Segment-level analysis (heterogeneous treatment effects) is the standard next question after a SHIP verdict, and I deliberately left it out of scope.
+
+One finding I did not expect going in: guardrail power is expensive. Powering a 2% AOV margin needs roughly 13x the traffic of the primary conversion test. Real teams widen margins, switch to all-user formulations, or accept explicit Type II risk. The engine surfaces that trade-off instead of hiding it.
+
+Finally, the synthetic generator uses homogeneous treatment effects and independent users. No network effects, novelty decay, or seasonality. An original dataset is hard to find which covers all these variables.
