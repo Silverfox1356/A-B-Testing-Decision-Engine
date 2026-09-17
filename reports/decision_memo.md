@@ -16,6 +16,11 @@ tolerance.
 
 ## Evidence
 
+- **Data quality**: the experiment passed its assignment check -- users reached
+  the two arms in the intended 50/50 proportion, so the comparison below is
+  sound. We check this before reading any metric, because an uneven split
+  usually means a delivery or logging fault and would invalidate everything
+  that follows.
 - **Checkout conversion (primary)**: up 0.32 percentage points on a 3.5% baseline,
   a roughly 9% relative improvement. This is statistically solid (p < 0.001 after
   correcting for testing multiple success metrics).
@@ -25,8 +30,8 @@ tolerance.
 - **Average order value (guardrail)**: inconclusive. The data neither clears nor
   breaches the 2% tolerance we set. This is a sample-size reality, not a red
   flag: order value is only measurable on the ~3.5% of users who buy, so
-  verifying it at our standards needs roughly 13x the traffic of this test
-  (about six months at current volume). The point estimate sits well inside the
+  verifying it at our standards needs roughly 9x the traffic of this test
+  (about four months at current volume). The point estimate sits well inside the
   tolerance; we simply cannot yet rule out a breach.
 
 ## Projected impact if the lift holds

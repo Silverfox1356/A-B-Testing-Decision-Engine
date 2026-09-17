@@ -8,7 +8,7 @@ Most A/B test writeups I found online stop at a t-test and a p-value. When I rea
 
 1. They design for power. Before running anything, they work out how many users a minimum detectable effect actually requires.
 2. They squeeze more out of the same traffic. CUPED uses pre-experiment data to tighten confidence intervals, which means shorter experiments.
-3. They decide under risk. A feature ships only if its success metrics improve AND its guardrail metrics are proven not to have degraded past a tolerance the business set in advance, with multiple-comparison control on the success family and explicit Type II risk on the guardrails.
+3. They decide under risk. A feature ships only if its success metrics improve AND its guardrail metrics are proven not to have degraded past a tolerance the business set in advance, with multiple-comparison control on the success family and explicit Type II risk on the guardrails. And before any of that, they check the experiment is even valid: a sample ratio mismatch means the arms are not comparable and no metric can be trusted.
 
 This project implements all three, end to end, on a simulated e-commerce checkout experiment and then on a real 64,000-user email experiment to prove the machinery survives contact with real data.
 
@@ -23,7 +23,7 @@ An e-commerce platform tests a streamlined checkout flow (treatment) against the
 | guardrail | average order value | must not drop more than 2% (non-inferiority) |
 | guardrail | checkout error rate | must not rise more than 0.5pp (non-inferiority) |
 
-The engine returns one of three verdicts. SHIP means the primary improved and every guardrail cleared with adequate power. DO NOT SHIP means the primary failed, or harm beyond a margin was established. INVESTIGATE means a guardrail came back inconclusive, which in practice usually means it was underpowered.
+The engine returns one of four verdicts. INVALID means the realized assignment split does not match the intended one, so the arms are not comparable; the engine reports no metrics at all, because an experiment with a known assignment bug should be fixed and re-run, not reasoned about. SHIP means the primary improved and every guardrail cleared with adequate power. DO NOT SHIP means the primary failed, or harm beyond a margin was established. INVESTIGATE means a guardrail came back inconclusive, which in practice usually means it was underpowered.
 
 ## Methodology and references
 
@@ -35,6 +35,10 @@ Superiority and non-inferiority testing are both one-sided z-tests. Guardrails u
 
 Multiplicity is handled with Benjamini-Hochberg (1995), applied across the success-metric family only.
 
+The sample ratio check is a chi-square goodness-of-fit test on the assignment split, gated at p < 0.0005 rather than 0.05. It runs on every experiment, so at 0.05 one healthy experiment in twenty would be discarded; a real assignment bug lands orders of magnitude below 0.0005 anyway. Reference: Kohavi et al. (2020) ch. 21 and Fabijan et al. (2019).
+
+Success metrics are CUPED-adjusted inside the engine, not just demonstrated in a notebook. Both use pre-experiment spend as the covariate, which removes 39% of revenue-per-user variance and 19% of conversion variance. Neither guardrail is adjusted: average order value is measured on converters only, and CUPED is not safe behind a post-treatment filter (details below); the checkout error rate is independent of pre-experiment behaviour by construction, so a covariate would buy nothing.
+
 ## Repository structure
 
 ```
@@ -42,7 +46,7 @@ config.py                    all parameters: ground truth, alpha, power, margins
 data/generate_data.py        synthetic generator (two-latent user model, exact marginal rates)
 src/power.py                 sample size and power, explicit formulas
 src/cuped.py                 theta and the CUPED adjustment
-src/tests_stats.py           superiority, non-inferiority, BH correction
+src/tests_stats.py           SRM gate, superiority, non-inferiority, BH correction
 src/decision_engine.py       MetricSpec, evaluate_experiment, DecisionReport
 src/plots.py                 shared plotting utilities
 notebooks/01..04             power design, CUPED, decision engine, real data
@@ -60,7 +64,7 @@ pip install -r requirements.txt
 # validation gates (each prints PASS/FAIL per gate)
 python validate_phase1.py     # power ~80%, A/A ~5%, formula vs statsmodels, correlations
 python validate_phase2.py     # CUPED variance reduction = 1-rho^2, unbiasedness, A/A FPR
-python validate_phase3.py     # NI test size and power, BH FDR control, scenario verdicts
+python validate_phase3.py     # NI test size and power, BH FDR control, scenario verdicts, SRM size/power
 
 # unit tests
 python -m pytest tests/ -q
@@ -97,6 +101,8 @@ This project analyzes fixed-horizon experiments only. Production platforms add a
 
 Everything here estimates average effects. Segment-level analysis (heterogeneous treatment effects) is the standard next question after a SHIP verdict, and I deliberately left it out of scope.
 
-One finding I did not expect going in: guardrail power is expensive. Powering a 2% AOV margin needs roughly 13x the traffic of the primary conversion test. Real teams widen margins, switch to all-user formulations, or accept explicit Type II risk. The engine surfaces that trade-off instead of hiding it.
+One finding I did not expect going in: guardrail power is expensive. Powering a 2% AOV margin to the 80% floor needs roughly 9x the traffic of the primary conversion test (about 650k users per arm); the 900k/arm the SHIP and DO-NOT-SHIP demos use, roughly 13x, buys about 91%. Real teams widen margins, switch to all-user formulations, or accept explicit Type II risk. The engine surfaces that trade-off instead of hiding it.
+
+A second finding came out of wiring CUPED into the engine. CUPED is unbiased only on the full randomized population: applying it to average order value, which is measured on converters only, injects real bias, because treatment changes who converts and so the arms' covariate means genuinely differ. On this generator, with a true AOV effect of exactly zero, converters-only CUPED returns +$0.70 against a $1.18 margin -- 12 Monte Carlo standard errors from zero over 400 simulations -- and it biases toward passing, the worst direction for a safety check. `MetricSpec` now refuses to combine a covariate with a row filter rather than leaving that to a docstring.
 
 Finally, the synthetic generator uses homogeneous treatment effects and independent users. No network effects, novelty decay, or seasonality. An original dataset is hard to find which covers all these variables.
