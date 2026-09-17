@@ -8,6 +8,9 @@ G3b: Benjamini-Hochberg on 10 metrics (5 true nulls): empirical FDR is
 G3c: the SHIP / DO NOT SHIP / INVESTIGATE scenarios produce their verdicts.
      Scenario seeds are fixed representative draws; the underlying rates
      (power, alpha) are what G3a and G1a validate.
+G3d: the SRM gate has the right size and power: on a genuinely fair coin it
+     fires at about SRM_ALPHA (so healthy experiments are essentially never
+     thrown out), and on a 49/51 assignment bug it fires nearly always.
 """
 
 import math
@@ -19,7 +22,7 @@ import config
 from data.generate_data import generate_experiment_data
 from src.decision_engine import default_metric_specs, evaluate_experiment
 from src.power import required_sample_size_per_arm
-from src.tests_stats import benjamini_hochberg, non_inferiority_test
+from src.tests_stats import benjamini_hochberg, non_inferiority_test, sample_ratio_mismatch
 
 N_SIMULATIONS = 2_000
 # SHIP/DO-NOT-SHIP scenarios need the AOV guardrail adequately powered,
@@ -107,12 +110,48 @@ def gate_g3c() -> bool:
     return report("G3c", ok, "all three verdicts as expected")
 
 
+def gate_g3d() -> bool:
+    """SRM gate: false alarm rate on fair assignment, detection on a broken one."""
+    n_users = 2 * required_sample_size_per_arm(
+        config.CONTROL_CONVERSION_RATE, config.MDE_RELATIVE
+    )
+    n_sims = 20_000
+    rng = np.random.default_rng(62_000)
+
+    # Size: a genuinely fair coin. Binomial draws, not the generator's exact
+    # split, because an exactly balanced split can never trigger the gate.
+    fair = rng.binomial(n_users, 0.5, n_sims)
+    false_alarms = sum(
+        sample_ratio_mismatch(int(n_t), n_users - int(n_t)).mismatch for n_t in fair
+    )
+    false_alarm_rate = false_alarms / n_sims
+
+    # Power: a 49/51 assignment bug at this sample size.
+    broken = rng.binomial(n_users, 0.49, 1_000)
+    detected = sum(
+        sample_ratio_mismatch(int(n_t), n_users - int(n_t)).mismatch for n_t in broken
+    )
+    detection_rate = detected / 1_000
+
+    # The false alarm rate is a binomial proportion around SRM_ALPHA; at
+    # 20,000 sims its standard error is ~0.00016, so allow 4 SEs of slack.
+    ok = false_alarm_rate <= config.SRM_ALPHA + 0.0007 and detection_rate >= 0.99
+    return report(
+        "G3d", ok,
+        f"false alarm rate on fair assignment = {false_alarm_rate:.5f} "
+        f"(expect ~{config.SRM_ALPHA}), detection of a 49/51 bug = {detection_rate:.3f} "
+        f"(expect ~1.000) at {n_users:,} users"
+    )
+
+
 def main() -> None:
     all_passed = gate_g3a()
     print()
     all_passed &= gate_g3b()
     print()
     all_passed &= gate_g3c()
+    print()
+    all_passed &= gate_g3d()
     print(f"\n{'ALL GATES PASS' if all_passed else 'SOME GATES FAILED'}")
 
 

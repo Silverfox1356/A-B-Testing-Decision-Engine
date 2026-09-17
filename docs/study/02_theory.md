@@ -259,6 +259,34 @@ before we flipped the coin, so the treatment cannot possibly have changed it.
 Subtracting something the treatment can't affect can't move the treatment
 effect — it only removes noise.*
 
+### The rule that outranks all of this: never behind a post-treatment filter
+
+CUPED's unbiasedness proof used **one** fact: `E[X̄_T] = E[X̄_C]`, guaranteed by
+randomization. Randomization guarantees it **on the randomized population**, and
+nowhere else.
+
+Restrict to a subgroup chosen by a post-treatment variable — converters, say —
+and the guarantee evaporates. Treatment changes *who* converts, so treatment
+converters and control converters are genuinely different people, and their
+covariate means genuinely differ. The correction term −θ(X̄_T − X̄_C) now has a
+non-zero expectation, and CUPED **injects** bias instead of removing noise.
+
+Measured on this project's generator with a true AOV effect of exactly **zero**:
+
+| estimator | mean over 400 sims | distance from 0 |
+|---|---|---|
+| raw AOV | +$0.070 | 0.95 MC SE — noise |
+| CUPED AOV (covariate `pre_exp_spend`) | **+$0.703** | **12.2 MC SE — bias** |
+
+Against a $1.18 margin, that is 60% of the entire tolerance — and it points
+**toward passing**, which is the worst possible direction for a safety check.
+
+`MetricSpec.__post_init__` raises a `ValueError` on `covariate` +
+`filter_column` rather than warning in a docstring. The rule is the same one
+from §6: conditioning on a post-treatment variable breaks what randomization
+bought. It is worth noticing that CUPED, the variance-reduction technique, and
+AOV, the guardrail, fail for *exactly the same reason*.
+
 ### Why θ is pooled across arms
 
 `compute_theta` is called on the **combined** sample, not per-arm.
@@ -459,6 +487,62 @@ contribution is that it **surfaces the trade-off instead of hiding it.**
 
 ---
 
+## §4b Sample ratio mismatch — the gate before the statistics
+
+### The idea
+
+Every test in §1–§4 assumes one thing: the two arms differ **only** by
+treatment. Randomization is what buys that, and SRM is how you check the
+randomization actually happened.
+
+If 140,458 users were meant to split 50/50 and 68,824 landed in treatment, that
+is not bad luck — it is a bug in assignment, logging, bot filtering or the
+analysis join. And the users who went missing are almost never a random subset
+(a crash on a particular device, a filter that drops one arm's bots harder), so
+the arms are now confounded and **no metric from the experiment means
+anything**.
+
+### The test
+
+Chi-square goodness of fit on two cells, 1 degree of freedom:
+
+$$\chi^2 = \frac{(n_T - E_T)^2}{E_T} + \frac{(n_C - E_C)^2}{E_C},
+\qquad E_T = N\pi,\; E_C = N(1-\pi)$$
+
+with π the intended treatment share. p = P(χ²₁ > observed).
+
+### Why α = 0.0005 and not 0.05
+
+**This is the question to be ready for**, because it looks inconsistent with the
+rest of the project.
+
+The SRM check runs on *every* experiment. At α = 0.05 you would throw away one
+perfectly healthy experiment in twenty — and each false alarm costs an
+engineering investigation that finds nothing, which is how a check gets ignored
+and then removed. Meanwhile a genuine SRM produces a p-value orders of
+magnitude below 0.0005: the 49/51 demo lands at **6e-14**. So the strict
+threshold costs essentially no detection power while nearly eliminating false
+alarms.
+
+Gate G3d measures exactly this: over 20,000 fair-coin simulations the gate
+fires at 0.00035 (≈ the nominal 0.0005), and it catches a 49/51 bug 100% of the
+time.
+
+The general principle — **a screening test that runs constantly needs a
+threshold set by its false-alarm budget, not by convention** — transfers well
+beyond A/B testing.
+
+### Why INVALID is its own verdict
+
+DO NOT SHIP is a statement about the **feature**: we learned it is not good
+enough. INVALID is a statement about the **experiment**: we learned nothing,
+because the data cannot support any claim. Collapsing them would tell a
+stakeholder the feature failed when in fact the pipeline did.
+
+And the engine returns **no metrics at all** on an SRM. That is deliberate: if
+you print the numbers next to "by the way, assignment is broken," somebody will
+quote the numbers. The only correct response to an SRM is fix and re-run.
+
 ## §5 Multiple comparisons and Benjamini-Hochberg
 
 ### The problem
@@ -658,9 +742,10 @@ certainty:
 - **Seasonality** — a single static window.
 - **Heterogeneous treatment effects** — the effect is identical for every user.
   Real effects vary by segment, and that is usually the interesting question.
-- **Sample ratio mismatch** — assignment is exactly 50/50 by construction, so
-  the generator can never produce the single most common real-world data-quality
-  failure.
+- **Sample ratio mismatch** — assignment is exactly 50/50 by default, so the
+  generator cannot produce one by accident. `treatment_share` exists so the
+  broken case can be *simulated deliberately* and the SRM gate exercised end to
+  end; what it still cannot produce is a mismatch arising on its own.
 - **Outliers and bot traffic** — clean lognormal tails, no capping needed.
 - **Multiple sessions per user** — one row per user, so no within-user
   clustering.

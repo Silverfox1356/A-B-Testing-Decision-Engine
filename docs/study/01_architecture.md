@@ -43,7 +43,7 @@ cycles.
 | `src/tests_stats.py` | `config` |
 | `src/plots.py` | `config`, `src.power` |
 | `data/generate_data.py` | `config` |
-| `src/decision_engine.py` | `config`, `src.tests_stats` |
+| `src/decision_engine.py` | `config`, `src.cuped`, `src.tests_stats` |
 | `dashboard/app.py` | `config`, `data`, `src.cuped`, `src.decision_engine`, `src.power`, `src.tests_stats` |
 | `notebooks/01–04` | various, via `sys.path.insert(0, "..")` |
 | `validate_phase1/2/3.py` | various |
@@ -141,6 +141,7 @@ The largest core module. Four public entry points, three result dataclasses:
 
 | Function | Returns | Used for |
 |---|---|---|
+| `sample_ratio_mismatch` | `SampleRatioResult` | the data-quality gate that runs before any metric |
 | `difference_in_means` | `MeanDifferenceResult` | two-sided estimation + CI (notebooks, dashboard) |
 | `superiority_test` | `SuperiorityResult` | success metrics (one-sided) |
 | `non_inferiority_test` | `NonInferiorityResult` | guardrail metrics (shifted null) |
@@ -174,7 +175,7 @@ MetricSpec(
     name="average order value", kind="guardrail", column="revenue",
     test="mean", direction="decrease",
     margin=config.AOV_NI_MARGIN_RELATIVE, margin_type="relative",
-    converted_only=True,
+    filter_column="converted",
 )
 ```
 
@@ -193,9 +194,13 @@ chain — would have required editing the engine for every new experiment.
 ### The three-stage pipeline inside `evaluate_experiment`
 
 ```
+0. SRM GATE      chi-square on the assignment split, at SRM_ALPHA = 0.0005
+                 mismatch -> return INVALID with NO metrics, short-circuit
 1. VALIDATE      exactly one primary success metric, else ValueError
+                 (MetricSpec.__post_init__ has already rejected a bad kind,
+                  a guardrail with no margin, and covariate + filter_column)
 2. SUCCESS FAMILY
-     for each success spec -> superiority_test
+     for each success spec -> _metric_arrays (filter, CUPED) -> superiority_test
      collect p-values -> benjamini_hochberg -> rejection mask
      record primary_ok
 3. GUARDRAIL FAMILY
@@ -209,11 +214,18 @@ chain — would have required editing the engine for every new experiment.
 ### Verdict precedence (memorize this order)
 
 ```python
+if srm.mismatch:        "INVALID"       # arms not comparable, no metrics at all
 if any_harm:            "DO NOT SHIP"   # established harm vetoes everything
 elif not primary_ok:    "DO NOT SHIP"   # no improvement, nothing to ship
 elif any_inconclusive:  "INVESTIGATE"   # can't confirm safety
 else:                   "SHIP"
 ```
+
+INVALID sits outside the other three deliberately. DO NOT SHIP is a statement
+about the *feature* -- we learned it is not good enough. INVALID is a statement
+about the *experiment* -- we learned nothing at all, because the data cannot
+support any claim. Collapsing them would tell a stakeholder the feature failed
+when the truth is that the pipeline did.
 
 The order encodes a value judgement: **proven harm outranks proven benefit.**
 A treatment that lifts conversion but breaks a guardrail does not ship, full
@@ -233,7 +245,7 @@ in the renderer, the dashboard and the notebook could disagree.
 This is a distinction worth making explicitly in an interview, because most
 portfolio projects have neither and almost none have both.
 
-### `tests/test_stats.py` — unit tests (13 tests, ~1 second)
+### `tests/test_stats.py` — unit tests (26 tests, ~3 seconds)
 Deterministic, fast, assert *properties of functions*:
 - our formula agrees with `statsmodels` within 1%
 - `achieved_power` inverts `required_sample_size_per_arm`
@@ -258,6 +270,7 @@ Monte-Carlo, assert *statistical properties of the whole pipeline*:
 | G3a | NI test has size α at the margin and 80% power at zero harm | 2,000 sims each |
 | G3b | BH controls FDR at q | 5,000 sims of 10 tests, 5 true nulls |
 | G3c | the three scenarios produce their verdicts | fixed representative seeds |
+| G3d | the SRM gate's size and power | 20,000 fair-coin sims, 1,000 broken-split sims |
 
 **The G2a subtlety is a great thing to raise unprompted.** The *in-sample*
 variance ratio equals 1 − r² as an algebraic identity whenever θ is estimated

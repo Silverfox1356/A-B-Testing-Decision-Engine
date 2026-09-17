@@ -266,10 +266,9 @@ applied to the **pooled** array, and the arms are split *afterwards* by the
 caller. That is the pooled-θ decision made structural — the API makes the
 per-arm mistake awkward to commit.
 
-**Note also what the project does not do:** `cuped_adjust` is never called
-inside `evaluate_experiment`. CUPED is demonstrated in notebook 02 and the
-dashboard, but the decision engine runs on raw metrics. This is a genuine gap —
-see `04_decisions_and_alternatives.md`. Know it before you are asked.
+**Where it is called:** `_metric_arrays` in the decision engine, on the pooled
+array after any row filter and before the arms are split. Notebook 02 and the
+dashboard also call it directly for their side-by-side comparisons.
 
 ---
 
@@ -394,17 +393,25 @@ this family. Policy documented next to the mechanism that enforces it.
 
 ### `MetricSpec` (dataclass)
 
-Nine fields declaring how one metric is measured and judged: `name`, `kind`
+Ten fields declaring how one metric is measured and judged: `name`, `kind`
 ("success"/"guardrail"), `column`, `test` ("proportion"/"mean"), `direction`,
-`margin`, `margin_type` ("absolute"/"relative"), `converted_only`, `is_primary`.
+`margin`, `margin_type` ("absolute"/"relative"), `filter_column`, `covariate`,
+`is_primary`. A `__post_init__` validates the combination.
 
 `test` is **reporting metadata only** — both values take the identical code path,
 because a proportion test on 0/1 data *is* a difference-in-means test. Say this
 proactively if asked; it looks like a dispatch key and isn't.
 
-`converted_only` is the escape hatch for converter-level metrics like AOV. Its
+`filter_column` is the escape hatch for subpopulation metrics like AOV. It was
+originally a hardcoded `converted_only: bool`, which leaked the synthetic
+schema into a general-purpose engine; naming the column generalizes it. Its
 existence in the API is a reminder that such metrics are supported but
 dangerous (theory §6).
+
+`covariate` names a pre-experiment column to CUPED-adjust the metric with.
+`__post_init__` **refuses to combine it with `filter_column`** — see
+"CUPED behind a post-treatment filter" below, which is the most important
+new rule in the codebase.
 
 ### `MetricResult` and `DecisionReport` (dataclasses)
 
@@ -424,25 +431,49 @@ Streamlit tab can render the same report differently without duplicating logic.
 
 ### `_metric_arrays(df, spec)` (private helper)
 ```python
-rows = df[df["converted"] == 1] if spec.converted_only else df
+rows = df[df[spec.filter_column] == 1] if spec.filter_column else df
 values = rows[spec.column].values.astype(float)
 is_treatment = (rows["group"] == "treatment").values
-return values[is_treatment], values[~is_treatment]
-```
-Filter, extract, split. `.astype(float)` normalizes int columns (like `converted`)
-so downstream variance math is uniform.
 
-**The hidden coupling to be honest about:** the column names `"converted"` and
-`"group"` are hardcoded. `"group"` with values `"control"`/`"treatment"` is the
-engine's data contract and is reasonable; `"converted"` is a leak of the
-synthetic schema into a general-purpose engine. The clean fix is a
-`filter_column` field on `MetricSpec` (or a predicate callable). In practice it
-does not bite notebook 04, because that analysis deliberately uses no
-`converted_only` metric — but it *would* bite the next dataset.
+variance_reduction = None
+if spec.covariate is not None:
+    covariate = rows[spec.covariate].values.astype(float)
+    adjusted = cuped_adjust(values, covariate)
+    raw_variance = float(np.var(values, ddof=1))
+    if raw_variance > 0.0:
+        variance_reduction = 1.0 - float(np.var(adjusted, ddof=1)) / raw_variance
+    values = adjusted
+
+return values[is_treatment], values[~is_treatment], variance_reduction
+```
+Filter, adjust, extract, split. `.astype(float)` normalizes int columns (like
+`converted`) so downstream variance math is uniform.
+
+**The ordering is the whole point.** CUPED runs on the *pooled* array and the
+arms are split afterwards, which is what keeps θ a treatment-independent
+constant. Splitting first and adjusting per arm would make θ a function of that
+arm's outcomes.
+
+**The one remaining hardcoded name** is `"group"`, with values
+`"control"`/`"treatment"`. That is the engine's data contract and is
+reasonable — notebook 04 satisfies it with one line. `"converted"` used to be
+hardcoded here too; `filter_column` removed that.
 
 ### `evaluate_experiment(df, metric_specs, alpha, power_floor) -> DecisionReport`
 
-**Stage 0 — partition and validate.**
+**Stage 0a — the SRM gate.**
+```python
+srm = sample_ratio_mismatch(n_treatment, n_control, expected_treatment_share, srm_alpha)
+if srm.mismatch:
+    return DecisionReport(verdict="INVALID", metrics=[], srm=srm, ...)
+```
+Runs before anything else and **returns no metrics at all**. That is a
+deliberate product decision, not laziness: if you print the metrics alongside
+"by the way, the assignment is broken," somebody will act on the metrics. The
+only correct response to an SRM is to fix the pipeline and re-run, so the
+engine refuses to supply numbers that could be acted on.
+
+**Stage 0b — partition and validate.**
 ```python
 success    = [s for s in metric_specs if s.kind == "success"]
 guardrails = [s for s in metric_specs if s.kind == "guardrail"]
@@ -593,7 +624,7 @@ why `run_scenario` is cached too, and why there is an `st.spinner`.
 
 ---
 
-## `tests/test_stats.py` — 196 lines, 13 tests, ~1 second
+## `tests/test_stats.py` — 26 tests, ~3 seconds
 
 | Test | What it pins down |
 |---|---|
@@ -610,6 +641,15 @@ why `run_scenario` is cached too, and why there is an `st.spinner`.
 | `test_non_inferiority_directions` | pass / inferior / within-margin-harm, in both directions |
 | `test_benjamini_hochberg_known_cases` | hand-worked BH, including the step-up rescue |
 | `test_generator_correlations_in_target_ranges` | the calibration cannot drift silently |
+| `test_srm_*` (5 tests) | balanced passes, ordinary imbalance tolerated, 49/51 caught, uneven intended splits honoured, bad inputs raise |
+| `test_generator_can_produce_a_mismatch` | `treatment_share` makes the gate exercisable end to end |
+| `test_engine_returns_invalid_and_withholds_metrics_on_srm` | INVALID, and `report.metrics == []` |
+| `test_engine_reports_a_clean_srm_check_on_good_data` | the gate does not fire on healthy data |
+| `test_metric_spec_refuses_cuped_behind_a_post_treatment_filter` | the bias rule is enforced, not documented |
+| `test_metric_spec_validates_kind_and_margin` | bad kind and margin-less guardrail raise |
+| `test_engine_cuped_shrinks_the_standard_error_without_moving_the_verdict` | SE ratio = √(1 − variance reduction) |
+| `test_engine_cuped_matches_the_documented_reductions` | the claimed 39% / 19% are real |
+| `test_engine_filter_column_is_not_hardcoded` | an arbitrary filter column works |
 
 **The testing craft point worth making in an interview:** statistical tests are
 prone to flakiness because they assert on random draws. This suite avoids it

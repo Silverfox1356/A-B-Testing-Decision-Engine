@@ -377,6 +377,22 @@ detection therefore cannot be demonstrated. Own this one.
 
 ---
 
+### C5. `treatment_share` on the generator
+
+**Alternatives:** leave assignment exactly balanced; switch the default to
+binomial assignment.
+
+**Why neither extreme:** exact balance is what keeps assignment-ratio noise out
+of the variance measurements (C3), so it stays the **default**. But a gate you
+cannot exercise is a gate you cannot trust, and an exactly balanced generator
+can never produce an SRM. `treatment_share` lets the broken case be simulated
+deliberately without changing any existing behaviour — every current call site
+uses the default and produces byte-identical data.
+
+**The honest residual:** the generator still cannot produce a mismatch *on its
+own*, only one you ask for. Validating the gate's false-alarm rate therefore
+uses direct binomial draws in G3d rather than the generator.
+
 ### C4. Error rate independent of the latents
 
 **Alternatives:** load it on `q_freq` too.
@@ -387,6 +403,67 @@ simple isolates the teaching point: what makes AOV hard is the converter-only
 denominator and heavy tails, not guardrails in general.
 
 ---
+
+### B11. SRM gated at 0.0005, not 0.05, and short-circuiting
+
+**Alternatives:** (a) gate at α = 0.05 like everything else; (b) warn but still
+report metrics; (c) fold it into DO NOT SHIP.
+
+**Why 0.0005:** the check runs on *every* experiment, so α = 0.05 discards one
+healthy experiment in twenty. Each false alarm costs an engineering
+investigation that finds nothing, which is how a check gets ignored and then
+deleted. A real SRM is orders of magnitude more extreme anyway — the 49/51 demo
+lands at p = 6e-14 — so the strict threshold costs almost no detection power.
+G3d measures both halves: 0.00035 false-alarm rate over 20,000 fair-coin sims,
+100% detection of a 49/51 bug.
+
+The transferable principle: **a screening test that runs constantly gets its
+threshold from its false-alarm budget, not from convention.**
+
+**Why short-circuit with no metrics:** if you print the numbers next to "by the
+way, assignment is broken," somebody will quote the numbers. The only correct
+response to an SRM is to fix the pipeline and re-run, so the engine declines to
+supply anything actionable.
+
+**Why a separate INVALID verdict:** DO NOT SHIP is a claim about the *feature* —
+we learned it isn't good enough. INVALID is a claim about the *experiment* — we
+learned nothing. Collapsing them tells a stakeholder the feature failed when the
+pipeline did.
+
+### B12. Which metrics get a CUPED covariate
+
+**The success metrics** both use `pre_exp_spend`: 39% of revenue variance, 19%
+of conversion variance. Notably `pre_exp_spend` beats `pre_exp_sessions` on
+conversion too (19% vs 6%), because spend loads far more heavily on the
+frequency latent that drives conversion. Notebook 02 keeps the sessions
+covariate to contrast a strong and a weak one; the engine uses the better.
+
+**Neither guardrail is adjusted, for opposite reasons:**
+
+- *Average order value* — measured on converters only, and CUPED behind a
+  post-treatment filter is **biased**, not merely less effective. With a true
+  effect of exactly zero it returns +$0.70 against a $1.18 margin (12 MC SEs
+  over 400 sims), biased *toward passing*. `MetricSpec.__post_init__` raises
+  rather than documenting. See theory §3.
+- *Checkout error rate* — independent of pre-experiment behaviour by
+  construction (ρ with `pre_exp_sessions` is 0.002), so a covariate buys
+  nothing. It already has ~100% power.
+
+**The pushback to expect:** *"You picked the covariate after seeing which
+reduced variance most. Isn't that fishing?"* Fair, and the answer is that
+covariate selection is on **pre-period predictive power**, which does not depend
+on the treatment contrast, so it cannot bias the effect estimate the way
+outcome-driven selection would. The rigorous version selects on historical data
+before the experiment; that is also what CUPAC does, and it is the honest next
+step.
+
+**Worth knowing:** on seed 204 treatment happened to draw users with $1.70 more
+pre-experiment spend (+1.42 SE — chance, not a bug). θ × 1.697 = $0.0735, and
+the revenue estimate duly fell from +$0.182 to +$0.113, a drop of $0.069. CUPED
+removed a chance imbalance that was inflating the raw estimate. That is the
+second thing CUPED does, alongside variance reduction, and it is why the CUPED
+p-value on that seed is *worse* (0.032 vs 0.010) — the raw result was partly
+luck. Do not seed-shop that away; it is the best demonstration in the project.
 
 ## Part D — Software design decisions
 
@@ -465,28 +542,18 @@ here, not acceptable in a shipped library.
 
 Ranked by how likely an interviewer is to find them.
 
-### E1. No sample ratio mismatch (SRM) check — **the biggest gap**
-Every real experimentation platform checks SRM *before* looking at any metric: a
-chi-square test that the observed split matches the intended one. An SRM
-invalidates the entire experiment, because it means assignment or logging is
-broken and the arms are no longer comparable.
+### ~~E1. No sample ratio mismatch (SRM) check~~ — **FIXED**
+Was the biggest gap. Now `sample_ratio_mismatch` in `src/tests_stats.py`, gated
+in `evaluate_experiment` before any metric runs, returning the new **INVALID**
+verdict with no metrics at all. `treatment_share` on the generator makes it
+demonstrable, gate G3d validates its size and power, and notebook 03 §4 shows
+it firing. See B11 and C5 below for the design reasoning.
 
-This project has no SRM check, and the generator cannot even produce one (C3).
-**Fix:** a `chisquare([n_t, n_c], [n/2, n/2])` gate that hard-fails
-`evaluate_experiment` before any metric is tested, plus an option in the
-generator to inject a ratio imbalance so the check can be demonstrated.
-
-Volunteer this. It is the first thing an experienced experimentation person
-looks for.
-
-### E2. CUPED is demonstrated but not wired into the decision engine
-`cuped_adjust` is never called inside `evaluate_experiment`. The engine runs on
-raw metrics; CUPED lives in notebook 02 and the dashboard. So the project shows
-39% variance reduction and then does not spend it.
-
-**Fix:** a `covariate: str | None` field on `MetricSpec`; when set,
-`_metric_arrays` returns the adjusted array. Roughly ten lines. It is arguably
-the single highest-value change left in the repo.
+### ~~E2. CUPED not wired into the decision engine~~ — **FIXED**
+Now a `covariate` field on `MetricSpec`, applied in `_metric_arrays` on the
+pooled array before the arms are split. Both success metrics use
+`pre_exp_spend` (39% of revenue variance, 19% of conversion variance). Neither
+guardrail is adjusted — for two different reasons, see B12.
 
 ### E3. Fixed-horizon only — no sequential testing
 No always-valid inference, no group-sequential boundaries, no alpha spending.
@@ -504,10 +571,10 @@ out of scope, and the README says so.
 ### E5. Guardrail power uses the realized SE
 See B9. Not the discredited post-hoc power, but not purely a priori either.
 
-### E6. Hardcoded `"converted"` and `"group"` column names
-`_metric_arrays` leaks the synthetic schema into a general-purpose engine.
-`"group"` is a defensible data contract; `"converted"` is not. **Fix:** a
-`filter_column` field or a predicate callable on `MetricSpec`.
+### ~~E6. Hardcoded `"converted"` column name~~ — **FIXED**
+`converted_only: bool` became `filter_column: str | None`. `"group"` remains
+hardcoded, which is a defensible data contract rather than a schema leak —
+notebook 04 satisfies it with one line.
 
 ### E7. BH does nothing at m = 2
 See B4. The structure is right; the effect is nil at this family size.
@@ -536,9 +603,8 @@ is the right way to handle it — but be clear about the distinction if asked.
 
 ## Part F — What you would build next, in priority order
 
-1. **SRM check** — smallest change, largest correctness gain (E1).
-2. **Wire CUPED into the engine** — makes the variance reduction actually pay
-   for itself (E2).
+1. ~~SRM check~~ — **done** (E1).
+2. ~~Wire CUPED into the engine~~ — **done** (E2).
 3. **CUPAC** — replace the single covariate with a model prediction over all
    pre-experiment features. Would materially help the real-data case where one
    year-long covariate correlates at 0.02.

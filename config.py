@@ -62,6 +62,14 @@ ALPHA = 0.05                # significance level (two-sided for the baseline tes
 POWER_TARGET = 0.80
 MDE_RELATIVE = 0.08         # minimum detectable effect, relative lift on conversion
 
+# Sample ratio mismatch (SRM) gate. Deliberately far stricter than ALPHA: this
+# chi-square runs on EVERY experiment, so at alpha = 0.05 one healthy
+# experiment in twenty would be thrown out. 0.0005 is the threshold Kohavi et
+# al. (2020, ch. 21) recommend -- a genuine SRM is an assignment or logging
+# bug and produces p-values orders of magnitude below this, while random
+# imbalance almost never does.
+SRM_ALPHA = 0.0005
+
 # ---------------------------------------------------------------------------
 # Guardrail non-inferiority margins (used from Phase 3 onward)
 # ---------------------------------------------------------------------------

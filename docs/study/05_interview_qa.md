@@ -38,12 +38,27 @@ Legend: 🟢 basic · 🟡 intermediate · 🔴 hard / likely to separate candid
 > so ship behind guardrails that could never have caught anything.
 
 **🟡 Q4. What would you do differently?**
-> Three things. I'd add a sample ratio mismatch check first — it's the standard
-> first gate in any real platform and I don't have one. I'd wire CUPED into the
-> decision engine; right now I demonstrate 39% variance reduction and then run
-> the verdicts on raw metrics, which is leaving the benefit on the table. And I'd
-> add sequential testing, because fixed-horizon analysis is only valid if nobody
-> peeks, and everyone peeks.
+> The two biggest gaps I've since closed. I had no sample ratio mismatch check —
+> the standard first gate in any real platform — so I added one, and it returns
+> a separate INVALID verdict that withholds every metric. And I'd demonstrated
+> 39% variance reduction from CUPED and then run the verdicts on raw metrics, so
+> I wired CUPED into the engine. What's still open: sequential testing, because
+> fixed-horizon analysis is only valid if nobody peeks and everyone peeks; and
+> CUPAC, which would materially help the real-data case.
+
+**🔴 Q4b. Wiring CUPED in must have been simple. Was it?**
+> The wiring was ten lines. What wasn't simple was discovering I couldn't apply
+> it to the average-order-value guardrail. CUPED's unbiasedness rests on the
+> arms having equal covariate means, which randomization guarantees on the
+> randomized population — and AOV is measured on converters only, which is a
+> post-treatment subgroup. I simulated it with a true AOV effect of exactly
+> zero: the raw estimator came back at +$0.07, well within noise, and the CUPED
+> one at **+$0.70** — twelve Monte Carlo standard errors from zero, against a
+> $1.18 margin. And it biased toward *passing*, which is the worst direction for
+> a safety check. So the engine now raises a ValueError if you try to combine a
+> covariate with a row filter. It's the same failure mode as the original AOV
+> incident, which was a slightly unsettling thing to rediscover from the other
+> direction.
 
 **🟡 Q5. Explain it to a VP of Product in 30 seconds.**
 > Before we run a test, it tells you how long it needs to run to give a
@@ -282,12 +297,22 @@ most likely follow-up on this project)*
 > value is that the structure is correct and scales — add eight secondary metrics
 > and it starts doing real work. I'd rather say that than claim it mattered.
 
-**🟡 Q37. Explain the three verdicts.**
-> SHIP: the primary improved after BH correction and every guardrail established
+**🟡 Q37. Explain the verdicts.**
+> Four of them. INVALID: the assignment split doesn't match what was intended,
+> so the arms aren't comparable and no metric is reported at all. SHIP: the
+> primary improved after BH correction and every guardrail established
 > non-inferiority with adequate power. DO NOT SHIP: either the primary failed, or
 > harm beyond a margin is statistically established. INVESTIGATE: the primary
 > improved but at least one guardrail is inconclusive — usually because it was
 > underpowered.
+
+**🔴 Q37b. Why is INVALID separate from DO NOT SHIP?**
+> Because they're claims about different things. DO NOT SHIP is a claim about
+> the feature — we ran a valid experiment and learned the feature isn't good
+> enough. INVALID is a claim about the experiment — we learned nothing, because
+> the data can't support any claim at all. If I collapsed them, a stakeholder
+> would hear "the feature failed" when the truth is "the pipeline failed," and
+> they'd kill a feature that might be fine.
 
 **🔴 Q38. What's the precedence order and why?**
 > Harm first, then primary failure, then inconclusive, then ship. Established
@@ -576,12 +601,35 @@ good. Explain.**
 These go beyond your code. Interviewers use the project as a springboard.
 
 **🟡 Q69. What is a sample ratio mismatch and why does it matter?**
-> When the observed split differs significantly from the intended one — say
-> 50.4/49.6 at a million users. You test it with a chi-square goodness of fit.
-> It matters because it means assignment or logging is broken, which means the
-> arms aren't comparable, which invalidates every metric in the experiment. It's
-> the standard first gate in any real platform. I don't have one, and it's the
-> first thing I'd add.
+> When the observed split differs significantly from the intended one. You test
+> it with a chi-square goodness of fit on the two arm counts, one degree of
+> freedom. It matters because it means assignment, logging, bot filtering or the
+> analysis join is broken — and the users who went missing are almost never a
+> random subset, so the arms are confounded and every metric in the experiment
+> is meaningless. It's the standard first gate in any real platform, and it's
+> the first thing my engine runs.
+
+**🔴 Q69b. Your α is 0.05 everywhere but your SRM gate uses 0.0005. Justify
+that.** *(the most likely follow-up on the SRM work)*
+> Because the SRM check runs on *every* experiment, not once per decision. At
+> 0.05 I'd throw away one perfectly healthy experiment in twenty, and each false
+> alarm costs an engineering investigation that finds nothing — which is exactly
+> how a check gets ignored and then deleted. Meanwhile a genuine SRM is orders
+> of magnitude more extreme: my 49/51 demo lands at p = 6e-14. So the strict
+> threshold costs essentially no detection power while nearly eliminating false
+> alarms. My validation gate measures both halves — 0.00035 false-alarm rate
+> over 20,000 fair-coin simulations, and 100% detection of a 49/51 bug.
+>
+> The general principle is that a screening test which runs constantly should
+> get its threshold from its false-alarm budget, not from convention.
+
+**🔴 Q69c. Why report no metrics at all on an SRM? Isn't that hiding data?**
+> It's refusing to supply something that can only be misused. If I print the
+> metrics next to "by the way, assignment is broken," somebody will quote the
+> metrics in a deck and the caveat will fall off. There is exactly one correct
+> response to an SRM — fix the pipeline and re-run — so the engine declines to
+> give anyone an alternative. The raw data is obviously still there; what's
+> withheld is the *analysis*, which is genuinely invalid.
 
 **🟡 Q70. What's the peeking problem?**
 > Checking results repeatedly and stopping when you see significance. Each look
@@ -714,11 +762,25 @@ adjustment. Are they right?**
 > going from 20% to 80% power on that guardrail costs about nine times the users.
 
 **🔴 Q88. Is there anything in this project you'd now say was a mistake?**
-> Not wiring CUPED into the decision engine. I built the variance reduction,
-> proved it works, and then ran the verdicts on raw metrics. It's about ten lines
-> — a covariate field on MetricSpec that `_metric_arrays` honours. Demonstrating
-> a capability and then not using it is exactly the gap between a portfolio piece
-> and a working system.
+> Two, both since fixed. I built CUPED, proved it works, and then ran the
+> verdicts on raw metrics — demonstrating a capability and not using it is
+> exactly the gap between a portfolio piece and a working system. And I had no
+> SRM check, which meant the engine would confidently analyse an experiment
+> whose randomization was broken. What's still open is sequential testing, and
+> I'd rather name that than pretend the project is finished.
+
+**🔴 Q88b. Adding CUPED made one of your p-values worse. Doesn't that mean it
+hurt?** *(a great question to be ready for)*
+> No — and it's my favourite result in the project. On that seed, treatment
+> happened to draw users with $1.70 more pre-experiment spend, about 1.4
+> standard errors of chance imbalance. θ times that imbalance is $0.073, and the
+> revenue estimate duly fell from +$0.182 to +$0.113. So CUPED removed a chance
+> imbalance that was *inflating* the raw estimate — the raw number was partly
+> luck. That's the second thing CUPED does alongside variance reduction: it
+> corrects covariate imbalance. The standard error genuinely fell by 22%; the
+> point estimate just happened to fall further on this particular draw. Over 400
+> simulations the CUPED and raw estimators agree to within 0.06 Monte Carlo
+> standard errors, which is the unbiasedness check that matters.
 
 **🔴 Q89. What don't you know about experimentation that you wish you did?**
 > Practically, running at scale: the infrastructure side — assignment services,
@@ -756,5 +818,11 @@ adjustment. Are they right?**
 | Real-data verdict? | INVESTIGATE (guardrail power 13%) |
 | Halve the MDE? | 4× the sample size |
 | Rule of thumb? | n ≈ 16p(1−p)/Δ² |
-| Number of unit tests? | 13, all passing, ~1 second |
-| Biggest gap? | No SRM check |
+| Number of unit tests? | 26, all passing, ~3 seconds |
+| SRM test? | Chi-square goodness of fit, 1 df, gated at p < 0.0005 |
+| Why 0.0005? | Runs on every experiment; 0.05 would discard 1 healthy test in 20 |
+| SRM gate G3d? | 0.00035 false-alarm rate, 100% detection of 49/51 |
+| Verdicts? | INVALID, SHIP, DO NOT SHIP, INVESTIGATE |
+| CUPED in the engine? | Both success metrics, covariate `pre_exp_spend` |
+| Why no CUPED on AOV? | Converters-only is post-treatment: +$0.70 bias vs a $1.18 margin |
+| Biggest remaining gap? | No sequential testing (peeking) |

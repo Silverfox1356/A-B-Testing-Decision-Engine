@@ -47,8 +47,26 @@ Do not try to memorize a derivation — practise producing it.
 | Case | ρ | Variance reduction | CI narrowing |
 |---|---|---|---|
 | Synthetic revenue (covariate: pre-period spend) | 0.625 | 39.0% | 21.9% |
-| Synthetic conversion (covariate: pre-period sessions) | 0.251 | 6.3% | 3.2% |
+| Synthetic conversion (covariate: **pre-period spend**, used by the engine) | 0.435 | 18.9% | 10.0% |
+| Synthetic conversion (covariate: pre-period sessions, notebook 02) | 0.251 | 6.3% | 3.2% |
 | Real spend (covariate: prior-year history) | 0.0195 | 0.038% | 0.02% |
+
+**Why the engine uses pre-period spend for conversion too:** spend loads far
+more heavily on the frequency latent that drives conversion than session count
+does, so it is the better covariate on *both* metrics (19% vs 6%). Notebook 02
+keeps the sessions covariate to contrast a strong and a weak one.
+
+**Guardrail covariates: none, for two different reasons.** AOV is converters-only,
+and CUPED behind a post-treatment filter is *biased* — +$0.70 against a $1.18
+margin when the true effect is zero (12 MC SE over 400 sims), biased toward
+passing. `MetricSpec` raises on it. The error rate has no useful covariate
+(ρ = 0.002) and already has ~100% power.
+
+**The seed-204 imbalance story (memorize this one):** treatment drew $1.70 more
+pre-experiment spend by chance (+1.42 SE). θ × 1.697 = $0.0735, and the revenue
+estimate fell from +$0.182 to +$0.113 — a drop of $0.069. CUPED removed a chance
+imbalance that was inflating the raw estimate. Its p-value got *worse*
+(0.010 → 0.032) because the raw result was partly luck.
 
 θ values: revenue 0.0433, conversion 0.0182, real-data 0.001035.
 Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
@@ -79,6 +97,19 @@ Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
 | Verdict | **INVESTIGATE** |
 | Control spend mean / SD | $0.65 / $11.6 |
 
+### Sample ratio mismatch
+
+| | Value |
+|---|---|
+| Test | Chi-square goodness of fit, 2 cells, 1 df |
+| Gate | p < 0.0005 (`config.SRM_ALPHA`), not 0.05 |
+| Why | Runs on every experiment; 0.05 discards 1 healthy test in 20 |
+| Demo mismatch | 49/51 at 140,458 users → chi² = 56.2, **p = 6e-14** |
+| G3d false-alarm rate | 0.00035 over 20,000 fair-coin sims |
+| G3d detection | 100% on a 49/51 bug |
+| Hillstrom | 21,387 / 21,306 → p = 0.695, passes cleanly |
+| On failure | verdict INVALID, **zero metrics reported** |
+
 ### Business
 
 | | Value |
@@ -93,8 +124,8 @@ Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
 | | Value |
 |---|---|
 | Total Python | ~1,580 lines, 11 files |
-| Unit tests | 13, ~1 second, all passing |
-| Validation gates | 10 (G1a–d, G2a–c, G3a–c) |
+| Unit tests | 26, ~3 seconds, all passing |
+| Validation gates | 11 (G1a–d, G2a–c, G3a–d) |
 | Simulations per gate | 1,000–5,000 |
 | `src/cuped.py` | 51 lines — the whole method |
 | `src/decision_engine.py` | 233 lines — the largest module |
@@ -127,6 +158,17 @@ the margin-to-noise ratio, a property of the design.
 ### Drill 5 — Why guardrails aren't alpha-corrected (target: 90 seconds, verbal)
 No math — the risk-asymmetry argument, cleanly, plus the perverse-incentive
 point about adding guardrails to loosen the others.
+
+### Drill 5b — Why the SRM gate uses 0.0005 (target: 60 seconds, verbal)
+The false-alarm-budget argument: the check runs on every experiment, a real SRM
+is orders of magnitude more extreme anyway, and a check that cries wolf gets
+deleted. Then the numbers: 6e-14 on the demo, 0.00035 false-alarm rate in G3d.
+
+### Drill 5c — Why CUPED is refused on AOV (target: 60 seconds, verbal)
+Unbiasedness needs E[X̄_T] = E[X̄_C], randomization gives it only on the full
+randomized population, converters-only is post-treatment, so the arms' covariate
+means genuinely differ. Then the number: +$0.70 against a $1.18 margin, biased
+toward passing.
 
 ### Drill 6 — The selection bias story (target: 90 seconds, verbal)
 Symptom → mechanism → name → fix → lesson carried forward. Practise until it
@@ -189,6 +231,14 @@ Score yourself. Any "no" is your next study session.
 - [ ] Name five things the simulation doesn't model
 - [ ] Explain the G2a tautology problem and how you avoided it
 - [ ] Explain why tolerances are in Monte-Carlo SE units
+
+**The new layer**
+- [ ] Explain what an SRM is and why it invalidates everything
+- [ ] Justify 0.0005 against the project's own 0.05
+- [ ] Explain why INVALID withholds all metrics
+- [ ] Explain why INVALID is separate from DO NOT SHIP
+- [ ] Explain why CUPED is refused behind a post-treatment filter, with the number
+- [ ] Explain why a CUPED p-value got *worse* on seed 204
 
 **Weaknesses**
 - [ ] Name five genuine weaknesses unprompted
