@@ -14,8 +14,15 @@ RANDOM_SEED = 42
 # ---------------------------------------------------------------------------
 # Ground-truth treatment effects (what the generator injects)
 # ---------------------------------------------------------------------------
-CONTROL_CONVERSION_RATE = 0.035   # baseline checkout conversion rate
-TRUE_CONVERSION_LIFT = 0.08       # relative lift: treatment converts at 3.5% * 1.08
+CONTROL_CONVERSION_RATE = 0.035   # baseline checkout conversion rate (desktop
+                                  # e-commerce, ~3.0-3.9% per Dynamic Yield /
+                                  # Littledata 2026 benchmarks)
+TRUE_CONVERSION_LIFT = 0.03       # relative lift: treatment converts at 3.5% * 1.03.
+                                  # Calibrated to real winning-checkout lifts: a
+                                  # meta-analysis of 6,700 e-commerce experiments
+                                  # reports typical wins of 1.5-11.6%; Kohavi et al.
+                                  # note most real effects are 1-3% (median ~0.1%).
+                                  # 8% was an unrealistically optimistic demo value.
 
 TRUE_AOV_EFFECT = -0.01           # relative change in average order value under
                                   # treatment (slightly negative so the guardrail
@@ -51,7 +58,10 @@ SPEND_FREQ_LOADING = 1.1
 SPEND_VALUE_LOADING = 0.8
 SPEND_NOISE_SD = 0.2
 
-ORDER_LOG_MEAN = 3.8               # lognormal order value for converters
+ORDER_LOG_MEAN = 4.2               # lognormal order value for converters (~$86 mean;
+                                   # mid-market e-commerce AOV is ~$85-100 per
+                                   # Littledata/Dynamic Yield 2026). Scale-only change:
+                                   # Pearson correlations are scale-invariant.
 ORDER_VALUE_LOADING = 0.7
 ORDER_NOISE_SD = 0.25
 
@@ -60,7 +70,11 @@ ORDER_NOISE_SD = 0.25
 # ---------------------------------------------------------------------------
 ALPHA = 0.05                # significance level (two-sided for the baseline test)
 POWER_TARGET = 0.80
-MDE_RELATIVE = 0.08         # minimum detectable effect, relative lift on conversion
+MDE_RELATIVE = 0.03         # minimum detectable effect, relative lift on conversion.
+                            # Kept equal to TRUE_CONVERSION_LIFT so gate G1a validates
+                            # ~80% power AT the true effect. Held <=5% per Kohavi et al.:
+                            # MDEs above 5% guarantee underpowered tests given real
+                            # effect sizes of 1-3%.
 
 # ---------------------------------------------------------------------------
 # Guardrail non-inferiority margins (used from Phase 3 onward)

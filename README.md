@@ -76,11 +76,11 @@ Notebook 04 downloads the Hillstrom CSV (about 5 MB) into `data/` on first run.
 
 ## Key results
 
-Detecting a +8% relative lift on a 3.5% conversion baseline needs roughly 70k users per arm, which is 14 days at 10k users/day:
+Detecting a +3% relative lift on a 3.5% conversion baseline needs roughly 488k users per arm, which is about 98 days at 10k users/day. The effect size is deliberately realistic: Kohavi et al. note that most real effects are around 1-3%, a meta-analysis of 6,700 e-commerce experiments reports typical winning lifts of roughly 1.5-12%, and real experiment MDEs are held under 5%. Small effects and long runtimes are the norm, which is exactly what makes variance reduction worth the effort:
 
 ![Power curves](reports/figures/power_curves.png)
 
-CUPED removes about 39% of revenue-per-user variance. That number is not a coincidence: it matches the theoretical rho squared exactly for the realized covariate correlation of 0.62. For the rare binary conversion metric the reduction is only about 6%, which lines up with what industry writeups report.
+CUPED removes about 37% of revenue-per-user variance. That number is not a coincidence: it matches the theoretical rho squared exactly for the realized covariate correlation of 0.61. For the rare binary conversion metric the reduction is only about 6%, which lines up with what industry writeups report.
 
 ![Raw vs CUPED confidence intervals](reports/figures/cuped_ci_comparison.png)
 
@@ -97,6 +97,6 @@ This project analyzes fixed-horizon experiments only. Production platforms add a
 
 Everything here estimates average effects. Segment-level analysis (heterogeneous treatment effects) is the standard next question after a SHIP verdict, and I deliberately left it out of scope.
 
-One finding I did not expect going in: guardrail power is expensive. Powering a 2% AOV margin needs roughly 13x the traffic of the primary conversion test. Real teams widen margins, switch to all-user formulations, or accept explicit Type II risk. The engine surfaces that trade-off instead of hiding it.
+One finding I did not expect going in: guardrail power is expensive. Powering the 2% AOV margin to ~90% needs roughly 900k users per arm, about 1.8x the ~488k the primary conversion test needs, because order value is only measured on the ~3.5% of users who buy and basket sizes are heavy-tailed. Real teams widen margins, switch to all-user formulations, or accept explicit Type II risk. The engine surfaces that trade-off instead of hiding it.
 
 Finally, the synthetic generator uses homogeneous treatment effects and independent users. No network effects, novelty decay, or seasonality. An original dataset is hard to find which covers all these variables.

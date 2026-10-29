@@ -48,7 +48,8 @@ with tab_design:
     col1, col2 = st.columns([1, 2])
     with col1:
         baseline = st.slider("Baseline conversion rate (%)", 0.5, 10.0, 3.5, 0.1) / 100
-        mde = st.slider("MDE, relative lift (%)", 2, 20, 8, 1) / 100
+        mde = st.slider("MDE, relative lift (%)", 2, 20,
+                        round(config.MDE_RELATIVE * 100), 1) / 100
         alpha = st.slider("Alpha (two-sided)", 0.01, 0.10, 0.05, 0.01)
         power = st.slider("Target power", 0.70, 0.95, 0.80, 0.05)
 
@@ -135,9 +136,10 @@ with tab_cuped:
 
 
 # ---------------------------------------------------------------- Tab 3
+N_DESIGNED = required_sample_size_per_arm(config.CONTROL_CONVERSION_RATE, config.MDE_RELATIVE)
 SCENARIOS = {
-    "Experiment as designed (70k/arm)": dict(
-        n_users=2 * 70_229, seed=204),
+    f"Experiment as designed ({N_DESIGNED / 1000:.0f}k/arm)": dict(
+        n_users=2 * N_DESIGNED, seed=204),
     "SHIP: no true AOV harm, guardrail-powered n (900k/arm)": dict(
         n_users=1_800_000, seed=202, aov_effect=0.0),
     "DO NOT SHIP: -5% true AOV harm (900k/arm)": dict(

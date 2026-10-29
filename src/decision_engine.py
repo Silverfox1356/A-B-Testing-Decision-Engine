@@ -6,8 +6,9 @@ Type II risk reported as power) into a single verdict:
 
   SHIP          primary metric significantly improved (after BH) AND every
                 guardrail established non-inferiority with adequate power.
-  DO NOT SHIP   primary failed, or any guardrail shows statistically
-                significant harm.
+  DO NOT SHIP   primary failed, or any guardrail shows harm BEYOND its
+                margin (statistically established). Significant harm that
+                stays within the margin is an accepted cost, not a blocker.
   INVESTIGATE   otherwise: some guardrail is inconclusive (usually because
                 the experiment is underpowered for that guardrail).
 
