@@ -144,8 +144,11 @@ SCENARIOS = {
         n_users=1_800_000, seed=202, aov_effect=0.0),
     "DO NOT SHIP: -5% true AOV harm (900k/arm)": dict(
         n_users=1_800_000, seed=203, aov_effect=-0.05),
+    f"INVALID: broken assignment, 49/51 split ({N_DESIGNED / 1000:.0f}k/arm)": dict(
+        n_users=2 * N_DESIGNED, seed=204, treatment_share=0.49),
 }
-BANNER = {"SHIP": st.success, "DO NOT SHIP": st.error, "INVESTIGATE": st.warning}
+BANNER = {"SHIP": st.success, "DO NOT SHIP": st.error,
+          "INVESTIGATE": st.warning, "INVALID": st.error}
 
 
 @st.cache_data
@@ -164,6 +167,19 @@ with tab_decision:
     for reason in report.reasoning:
         st.markdown(f"- {reason}")
     st.markdown(f"alpha = {report.alpha}, guardrail power floor = {report.power_floor:.0%}")
+
+    if report.srm is not None:
+        srm = report.srm
+        label = "MISMATCH" if srm.mismatch else "ok"
+        st.caption(
+            f"sample ratio check ({label}): treatment {srm.n_treatment:,} / "
+            f"control {srm.n_control:,} = {srm.observed_share:.4%} vs "
+            f"{srm.expected_share:.2%} intended, chi-square p = {srm.p_value:.3g}"
+        )
+    if not report.metrics:
+        st.info("No metrics were evaluated: the sample ratio check failed, so the "
+                "arms are not comparable and any metric read from this experiment "
+                "would be confounded.")
 
     for m in report.metrics:
         r = m.result
@@ -187,6 +203,9 @@ with tab_decision:
                                 f"(worst-case bound {r.ci_bound:+.5f})")
                     st.caption(f"non-inferiority p = {r.p_value:.4f}, "
                                f"power if harmless = {r.power:.0%}")
+                if m.variance_reduction is not None:
+                    st.caption(f"CUPED on '{m.spec.covariate}': "
+                               f"{m.variance_reduction:.1%} of variance removed")
             with right:
                 st.markdown(f"### {icon}")
                 if m.note:

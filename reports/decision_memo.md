@@ -15,26 +15,33 @@ automatic pause if order value degrades past tolerance.
 
 ## Evidence
 
+- **Data quality**: the experiment passed its assignment check -- users reached
+  the two arms in the intended 50/50 proportion, so the comparison below is
+  sound. We check this before reading any metric, because an uneven split
+  usually means a delivery or logging fault and would invalidate everything
+  that follows.
 - **Checkout conversion (primary)**: up 0.11 percentage points on a 3.5% baseline,
   a roughly 3% relative improvement. This is statistically solid (one-sided
-  p = 0.0016 after correcting for testing multiple success metrics).
-- **Revenue per user**: up $0.05 per user, but this is **not** statistically
-  significant at this sample (p = 0.14). Per-user revenue is heavy-tailed (a few
-  large baskets dominate the mean), so a lift this small is not detectable even at
-  ~488k users per arm. Treat the direction as encouraging, not proven.
+  p < 0.001 after correcting for testing multiple success metrics).
+- **Revenue per user**: up $0.06 per user, but this is **not** statistically
+  significant at this sample (p = 0.054). We already use customers' pre-test
+  spending to strip out noise, which brought the p-value down from 0.14, but
+  per-user revenue is heavy-tailed (a few large baskets dominate the mean), so a
+  lift this small is still not detectable at ~488k users per arm. Treat the
+  direction as encouraging, not proven.
 - **Checkout error rate (guardrail)**: rose 0.07pp, within the 0.5pp tolerance we
   agreed before launch. The rise is real but is the accepted cost of the change.
 - **Average order value (guardrail)**: inconclusive. The test reaches only ~70%
   power on this metric, short of our 80% bar, so it neither clears nor breaches
-  the 2% tolerance we set. Confirming it at our standards needs roughly 1.8x the
-  traffic (about three more months at current volume). The point estimate sits
+  the 2% tolerance we set. Reaching our 80% standard needs roughly 1.3x the
+  traffic (about one more month at current volume). The point estimate sits
   inside the tolerance; we simply cannot yet rule out a breach.
 
 ## Projected impact if the lift holds
 
 At our traffic of 10,000 users per day, the significant conversion lift adds about
 **4,000 additional completed checkouts per year**. The revenue-per-user movement
-(+$0.05) is directionally positive but not statistically established, so we are
+(+$0.06) is directionally positive but not statistically established, so we are
 deliberately **not** booking a dollar figure on it yet. Any projection assumes the
 measured effect persists across seasons and does not decay after novelty.
 

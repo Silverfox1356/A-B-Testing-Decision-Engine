@@ -31,6 +31,7 @@ def generate_experiment_data(
     conversion_lift: float = config.TRUE_CONVERSION_LIFT,
     aov_effect: float = config.TRUE_AOV_EFFECT,
     error_rate_increase: float = config.TRUE_ERROR_RATE_INCREASE,
+    treatment_share: float = 0.5,
 ) -> pd.DataFrame:
     """Simulate one experiment and return a per-user DataFrame.
 
@@ -51,16 +52,27 @@ def generate_experiment_data(
     conversion rate is multiplied by (1 + conversion_lift), order value by
     (1 + aov_effect), and the error rate gets +error_rate_increase absolute.
 
-    Assumptions: users are independent, assignment is a random 50/50 split
+    Assumptions: users are independent, assignment is a random split
     independent of both latents, and treatment effects are homogeneous
     across users.
+
+    `treatment_share` sets the fraction assigned to treatment. The default
+    0.5 produces an EXACTLY balanced split rather than a binomial one, which
+    keeps assignment-ratio noise out of the simulation so that measured
+    variance is metric variance alone. The consequence is that the default
+    generator can never produce a sample ratio mismatch; pass a share away
+    from the intended one (e.g. 0.49 against an expected 0.5) to simulate the
+    broken-assignment case the SRM gate exists to catch.
     """
+    if not 0.0 < treatment_share < 1.0:
+        raise ValueError(f"treatment_share must be in (0, 1), got {treatment_share!r}")
     rng = np.random.default_rng(seed)
 
     q_freq = rng.standard_normal(n_users)
     q_value = rng.standard_normal(n_users)
+    n_treatment = int(round(n_users * treatment_share))
     group = rng.permuted(
-        np.array(["control", "treatment"]).repeat([n_users // 2, n_users - n_users // 2])
+        np.array(["control", "treatment"]).repeat([n_users - n_treatment, n_treatment])
     )
     is_treatment = group == "treatment"
 

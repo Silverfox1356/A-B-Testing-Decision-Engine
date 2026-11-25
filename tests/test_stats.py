@@ -8,11 +8,17 @@ from statsmodels.stats.proportion import proportion_effectsize
 import config
 from data.generate_data import generate_experiment_data
 from src.cuped import compute_theta, cuped_adjust
+from src.decision_engine import (
+    MetricSpec,
+    default_metric_specs,
+    evaluate_experiment,
+)
 from src.power import achieved_power, required_sample_size_per_arm
 from src.tests_stats import (
     benjamini_hochberg,
     difference_in_means,
     non_inferiority_test,
+    sample_ratio_mismatch,
     superiority_test,
 )
 
@@ -194,3 +200,159 @@ def test_generator_correlations_in_target_ranges():
     rho_conversion = control["converted"].corr(control["pre_exp_sessions"])
     assert 0.55 <= rho_revenue <= 0.75
     assert 0.08 <= rho_conversion <= 0.30
+
+
+# ---------------------------------------------------------------------------
+# Sample ratio mismatch gate
+# ---------------------------------------------------------------------------
+
+
+def test_srm_passes_on_a_balanced_split():
+    r = sample_ratio_mismatch(70_229, 70_229)
+    assert r.chi2 == pytest.approx(0.0)
+    assert r.p_value == pytest.approx(1.0)
+    assert not r.mismatch
+    assert r.observed_share == pytest.approx(0.5)
+
+
+def test_srm_tolerates_ordinary_random_imbalance():
+    """A split a couple of hundred users off at 140k is chance, not a bug."""
+    r = sample_ratio_mismatch(70_400, 70_058)
+    assert not r.mismatch
+    assert r.p_value > config.SRM_ALPHA
+
+
+def test_srm_detects_a_broken_assignment():
+    """A 49/51 split at this sample size is overwhelming evidence of a bug."""
+    r = sample_ratio_mismatch(68_824, 71_634)
+    assert r.mismatch
+    assert r.p_value < 1e-10
+
+
+def test_srm_honours_an_uneven_intended_split():
+    """A deliberate 90/10 ramp is fine when 90/10 is what was intended."""
+    assert not sample_ratio_mismatch(9_000, 1_000, expected_treatment_share=0.9).mismatch
+    # ...and the same counts ARE a mismatch against a 50/50 intent.
+    assert sample_ratio_mismatch(9_000, 1_000, expected_treatment_share=0.5).mismatch
+
+
+def test_srm_rejects_nonsense_inputs():
+    with pytest.raises(ValueError):
+        sample_ratio_mismatch(10, 10, expected_treatment_share=0.0)
+    with pytest.raises(ValueError):
+        sample_ratio_mismatch(0, 0)
+
+
+def test_generator_can_produce_a_mismatch():
+    """treatment_share is what lets the SRM gate be exercised end to end."""
+    df = generate_experiment_data(n_users=20_000, seed=7, treatment_share=0.49)
+    counts = df["group"].value_counts()
+    assert counts["treatment"] == 9_800 and counts["control"] == 10_200
+
+    balanced = generate_experiment_data(n_users=20_000, seed=7)
+    assert balanced["group"].value_counts()["treatment"] == 10_000
+
+    with pytest.raises(ValueError):
+        generate_experiment_data(n_users=100, seed=0, treatment_share=1.5)
+
+
+def test_engine_returns_invalid_and_withholds_metrics_on_srm():
+    n = required_sample_size_per_arm(config.CONTROL_CONVERSION_RATE, config.MDE_RELATIVE)
+    df = generate_experiment_data(n_users=2 * n, seed=204, treatment_share=0.49)
+    report = evaluate_experiment(df, default_metric_specs())
+
+    assert report.verdict == "INVALID"
+    assert report.srm.mismatch
+    # The point of the gate: no metric is reported, so nobody can act on it.
+    assert report.metrics == []
+    assert "sample ratio mismatch" in report.reasoning[0]
+
+
+def test_engine_reports_a_clean_srm_check_on_good_data():
+    n = required_sample_size_per_arm(config.CONTROL_CONVERSION_RATE, config.MDE_RELATIVE)
+    df = generate_experiment_data(n_users=2 * n, seed=204)
+    report = evaluate_experiment(df, default_metric_specs())
+
+    assert report.verdict != "INVALID"
+    assert report.srm is not None and not report.srm.mismatch
+    assert report.metrics  # metrics are evaluated when the gate passes
+
+
+# ---------------------------------------------------------------------------
+# CUPED wired into the decision engine
+# ---------------------------------------------------------------------------
+
+
+def test_metric_spec_refuses_cuped_behind_a_post_treatment_filter():
+    """Filtering on a post-treatment column breaks CUPED's unbiasedness."""
+    with pytest.raises(ValueError, match="post-treatment"):
+        MetricSpec(
+            name="average order value", kind="guardrail", column="revenue",
+            test="mean", direction="decrease", margin=0.02, margin_type="relative",
+            filter_column="converted", covariate="pre_exp_spend",
+        )
+
+
+def test_metric_spec_validates_kind_and_margin():
+    with pytest.raises(ValueError):
+        MetricSpec(name="x", kind="nonsense", column="a", test="mean")
+    with pytest.raises(ValueError):
+        MetricSpec(name="x", kind="guardrail", column="a", test="mean")
+
+
+def test_engine_cuped_shrinks_the_standard_error_without_moving_the_verdict():
+    """CUPED narrows the CI on the success metrics; the verdict is unchanged."""
+    n = required_sample_size_per_arm(config.CONTROL_CONVERSION_RATE, config.MDE_RELATIVE)
+    df = generate_experiment_data(n_users=2 * n, seed=204)
+
+    with_cuped = evaluate_experiment(df, default_metric_specs())
+    raw_specs = [
+        MetricSpec(**{**spec.__dict__, "covariate": None})
+        for spec in default_metric_specs()
+    ]
+    without = evaluate_experiment(df, raw_specs)
+
+    assert with_cuped.verdict == without.verdict
+    for adjusted, raw in zip(with_cuped.metrics, without.metrics):
+        if adjusted.spec.covariate is None:
+            assert adjusted.variance_reduction is None
+            assert adjusted.result.se == pytest.approx(raw.result.se)
+        else:
+            assert adjusted.variance_reduction > 0
+            assert adjusted.result.se < raw.result.se
+            # SE scales as sqrt(1 - variance reduction).
+            assert adjusted.result.se / raw.result.se == pytest.approx(
+                np.sqrt(1 - adjusted.variance_reduction), rel=0.02
+            )
+
+
+def test_engine_cuped_matches_the_documented_reductions():
+    """The covariate choices in default_metric_specs are the ones claimed."""
+    n = required_sample_size_per_arm(config.CONTROL_CONVERSION_RATE, config.MDE_RELATIVE)
+    df = generate_experiment_data(n_users=2 * n, seed=204)
+    by_name = {m.spec.name: m for m in evaluate_experiment(df, default_metric_specs()).metrics}
+
+    assert by_name["revenue per user"].variance_reduction == pytest.approx(0.39, abs=0.02)
+    assert by_name["checkout conversion rate"].variance_reduction == pytest.approx(0.19, abs=0.02)
+    # Guardrails deliberately carry no covariate.
+    assert by_name["average order value"].variance_reduction is None
+    assert by_name["checkout error rate"].variance_reduction is None
+
+
+def test_engine_filter_column_is_not_hardcoded():
+    """filter_column generalises what used to be a hardcoded 'converted'."""
+    n = 40_000
+    df = generate_experiment_data(n_users=n, seed=11)
+    df["high_value"] = (df["pre_exp_spend"] > df["pre_exp_spend"].median()).astype(int)
+
+    specs = [
+        MetricSpec(name="conversion", kind="success", column="converted",
+                   test="proportion", is_primary=True),
+        MetricSpec(name="AOV among high-value users", kind="guardrail",
+                   column="revenue", test="mean", direction="decrease",
+                   margin=0.02, margin_type="relative", filter_column="high_value"),
+    ]
+    report = evaluate_experiment(df, specs)
+    assert report.verdict in {"SHIP", "DO NOT SHIP", "INVESTIGATE"}
+    # The guardrail really was computed on the filtered half of the users.
+    assert len(df[df["high_value"] == 1]) == pytest.approx(n / 2, abs=2)

@@ -76,6 +76,14 @@ MDE_RELATIVE = 0.03         # minimum detectable effect, relative lift on conver
                             # MDEs above 5% guarantee underpowered tests given real
                             # effect sizes of 1-3%.
 
+# Sample ratio mismatch (SRM) gate. Deliberately far stricter than ALPHA: this
+# chi-square runs on EVERY experiment, so at alpha = 0.05 one healthy
+# experiment in twenty would be thrown out. 0.0005 is the threshold Kohavi et
+# al. (2020, ch. 21) recommend -- a genuine SRM is an assignment or logging
+# bug and produces p-values orders of magnitude below this, while random
+# imbalance almost never does.
+SRM_ALPHA = 0.0005
+
 # ---------------------------------------------------------------------------
 # Guardrail non-inferiority margins (used from Phase 3 onward)
 # ---------------------------------------------------------------------------

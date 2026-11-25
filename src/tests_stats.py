@@ -1,17 +1,95 @@
 """Statistical tests for experiment analysis.
 
-Contains the difference-in-means estimator (used for raw and CUPED-adjusted
-metrics), one-sided superiority tests for success metrics, shifted-hypothesis
+Contains the sample ratio mismatch (SRM) data-quality gate, the
+difference-in-means estimator (used for raw and CUPED-adjusted metrics),
+one-sided superiority tests for success metrics, shifted-hypothesis
 non-inferiority tests for guardrail metrics, and the Benjamini-Hochberg
 correction for the success-metric family.
+
+Tail probabilities use norm.sf / chi2.sf rather than 1 - cdf: the complement
+form loses all precision once the cdf rounds to 1.0, reporting p = 0.0 for
+what is really 1e-20. It changes no decision here, but a p-value that is
+exactly zero is a reporting artifact, not a result.
 """
 
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.stats import chi2 as chi2_dist
 from scipy.stats import norm
 
 import config
+
+
+@dataclass
+class SampleRatioResult:
+    """Chi-square goodness-of-fit check on the assignment split."""
+
+    n_treatment: int
+    n_control: int
+    observed_share: float   # treatment share of all assigned users
+    expected_share: float
+    chi2: float
+    p_value: float
+    mismatch: bool          # True means the experiment is not trustworthy
+
+
+def sample_ratio_mismatch(
+    n_treatment: int,
+    n_control: int,
+    expected_treatment_share: float = 0.5,
+    alpha: float = config.SRM_ALPHA,
+) -> SampleRatioResult:
+    """Test whether the realized assignment split matches the intended one.
+
+    Chi-square goodness of fit on two cells (1 degree of freedom):
+
+        E_t = N * share,  E_c = N * (1 - share),  N = n_t + n_c
+        chi2 = (n_t - E_t)^2 / E_t + (n_c - E_c)^2 / E_c
+        p    = P(chi2_1 > observed)
+
+    A significant result means users did not reach the arms in the intended
+    proportion. That is almost never chance: it points at a bug in assignment,
+    logging, bot filtering or the analysis join. It matters because every
+    other test in this module assumes the two arms are exchangeable apart from
+    treatment, and an SRM is direct evidence that they are not -- the users
+    who went missing are usually a non-random subset, so the comparison is
+    confounded and NO metric from the experiment can be trusted.
+
+    This is why the gate runs before any metric is evaluated and why a failure
+    invalidates the experiment rather than producing a ship/no-ship answer:
+    the correct response is to fix the pipeline and re-run, not to reason
+    about the metrics.
+
+    `alpha` defaults to config.SRM_ALPHA (0.0005), far stricter than the
+    project's 0.05 -- see the comment there for why.
+    Reference: Kohavi, Tang & Xu (2020), ch. 21; Fabijan et al. (2019),
+    "Diagnosing Sample Ratio Mismatch in Online Controlled Experiments".
+    """
+    if not 0.0 < expected_treatment_share < 1.0:
+        raise ValueError(
+            f"expected_treatment_share must be in (0, 1), got {expected_treatment_share!r}"
+        )
+    total = n_treatment + n_control
+    if total == 0:
+        raise ValueError("cannot check the sample ratio with zero assigned users")
+
+    expected_t = total * expected_treatment_share
+    expected_c = total * (1.0 - expected_treatment_share)
+    statistic = (
+        (n_treatment - expected_t) ** 2 / expected_t
+        + (n_control - expected_c) ** 2 / expected_c
+    )
+    p_value = float(chi2_dist.sf(statistic, df=1))
+    return SampleRatioResult(
+        n_treatment=int(n_treatment),
+        n_control=int(n_control),
+        observed_share=n_treatment / total,
+        expected_share=expected_treatment_share,
+        chi2=float(statistic),
+        p_value=p_value,
+        mismatch=p_value < alpha,
+    )
 
 
 @dataclass
@@ -49,7 +127,7 @@ def difference_in_means(
     se = float(np.sqrt(np.var(y_treatment, ddof=1) / n_t + np.var(y_control, ddof=1) / n_c))
 
     z_crit = norm.ppf(1.0 - alpha / 2.0)
-    p_value = 2.0 * (1.0 - norm.cdf(abs(estimate) / se))
+    p_value = 2.0 * norm.sf(abs(estimate) / se)
     return MeanDifferenceResult(
         estimate=estimate,
         se=se,
@@ -95,7 +173,7 @@ def superiority_test(
     estimate = float(np.mean(y_treatment) - np.mean(y_control))
     se = float(np.sqrt(np.var(y_treatment, ddof=1) / n_t + np.var(y_control, ddof=1) / n_c))
 
-    p_value = float(1.0 - norm.cdf(estimate / se))
+    p_value = float(norm.sf(estimate / se))
     ci_low = estimate - norm.ppf(1.0 - alpha) * se
     return SuperiorityResult(estimate=estimate, se=se, ci_low=ci_low, p_value=p_value)
 
@@ -174,7 +252,7 @@ def non_inferiority_test(
         inferior = best_case > margin
         harm_detected = best_case > 0.0
     else:
-        p_value = float(1.0 - norm.cdf((estimate + margin) / se))
+        p_value = float(norm.sf((estimate + margin) / se))
         ci_bound = estimate - z_crit * se
         best_case = estimate + z_crit * se
         ni_passed = ci_bound > -margin
