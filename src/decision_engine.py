@@ -9,8 +9,9 @@ reported as power) into a single verdict:
                 arms are not comparable and no metric can be trusted.
   SHIP          primary metric significantly improved (after BH) AND every
                 guardrail established non-inferiority with adequate power.
-  DO NOT SHIP   primary failed, or any guardrail shows statistically
-                significant harm.
+  DO NOT SHIP   primary failed, or any guardrail shows harm BEYOND its
+                margin (statistically established). Significant harm that
+                stays within the margin is an accepted cost, not a blocker.
   INVESTIGATE   otherwise: some guardrail is inconclusive (usually because
                 the experiment is underpowered for that guardrail).
 
@@ -68,9 +69,10 @@ class MetricSpec:
     subpopulation in each arm, which breaks the E[x | treatment] =
     E[x | control] identity CUPED's unbiasedness rests on. Measured on this
     project's generator with a TRUE average-order-value effect of exactly
-    zero, CUPED on converters-only revenue returns +$0.70 (12 Monte Carlo
-    standard errors from zero over 400 simulations) against a $1.18 margin --
-    the raw estimator stays unbiased. The bias points toward passing, which
+    zero, CUPED on converters-only revenue returns +$0.42 (14 Monte Carlo
+    standard errors from zero over 400 simulations) against a $1.76 margin --
+    the raw estimator stays unbiased. The bias grows with how strongly
+    treatment moves the filter variable, so it cannot be bounded in advance. The bias points toward passing, which
     is the worst possible direction for a safety check, so the combination is
     refused rather than documented.
     """
@@ -324,10 +326,10 @@ def evaluate_experiment(
 def default_metric_specs() -> list[MetricSpec]:
     """The checkout experiment's metric hierarchy, margins from config.
 
-    Covariate choices (variance removed at the designed 70k/arm sample size):
-      conversion      <- pre_exp_spend     18.9%
-      revenue/user    <- pre_exp_spend     39.0%
-    pre_exp_spend beats pre_exp_sessions on BOTH (sessions give only 5.7% on
+    Covariate choices (variance removed at the designed 488k/arm sample size):
+      conversion      <- pre_exp_spend     18.6%
+      revenue/user    <- pre_exp_spend     37.9%
+    pre_exp_spend beats pre_exp_sessions on BOTH (sessions give only 6.0% on
     conversion), because spend loads far more heavily on the frequency latent
     that drives conversion. Notebook 02 keeps the sessions covariate to
     contrast a strong and a weak one; the engine uses the better of the two.

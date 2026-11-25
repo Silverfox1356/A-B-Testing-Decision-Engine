@@ -29,19 +29,23 @@ Legend: 🟢 basic · 🟡 intermediate · 🔴 hard / likely to separate candid
 > demonstrate a p-value again.
 
 **🟡 Q3. What is the single most interesting thing you learned?**
-> That guardrail power is brutally expensive and almost nobody budgets for it.
-> My primary conversion test needed 70,000 users per arm. The average-order-value
-> guardrail, at the same 2% tolerance, needed roughly 900,000 — about 13 times
-> more — because AOV only exists for the 3.5% of users who buy and order values
-> are heavy-tailed. At the primary-powered sample size that guardrail had 20%
-> power, meaning it was essentially decorative. Most teams never compute this and
-> so ship behind guardrails that could never have caught anything.
+> That guardrail power is expensive, and that "how expensive" is relative to your
+> MDE. My average-order-value guardrail needs about 650,000 users per arm to
+> reach 80% power at a 2% tolerance, because AOV only exists for the 3.5% of
+> users who buy and order values are heavy-tailed. That requirement is fixed by
+> the margin and the variance, not by the primary test. When I first built the
+> project with an optimistic 8% MDE, the primary needed only 70,000 users per arm,
+> so the guardrail cost nine times more and sat at 20% power — essentially
+> decorative. When I recalibrated to a realistic 3% MDE, the primary needed
+> 488,000, and the same guardrail reached 70% power: still short of the 80%
+> floor, but nearly covered. Most teams never compute guardrail power at design
+> time, so they can't tell which of those two situations they're in.
 
 **🟡 Q4. What would you do differently?**
 > The two biggest gaps I've since closed. I had no sample ratio mismatch check —
 > the standard first gate in any real platform — so I added one, and it returns
 > a separate INVALID verdict that withholds every metric. And I'd demonstrated
-> 39% variance reduction from CUPED and then run the verdicts on raw metrics, so
+> 37% variance reduction from CUPED and then run the verdicts on raw metrics, so
 > I wired CUPED into the engine. What's still open: sequential testing, because
 > fixed-horizon analysis is only valid if nobody peeks and everyone peeks; and
 > CUPAC, which would materially help the real-data case.
@@ -53,8 +57,8 @@ Legend: 🟢 basic · 🟡 intermediate · 🔴 hard / likely to separate candid
 > randomized population — and AOV is measured on converters only, which is a
 > post-treatment subgroup. I simulated it with a true AOV effect of exactly
 > zero: the raw estimator came back at +$0.07, well within noise, and the CUPED
-> one at **+$0.70** — twelve Monte Carlo standard errors from zero, against a
-> $1.18 margin. And it biased toward *passing*, which is the worst direction for
+> one at **+$0.42** — fourteen Monte Carlo standard errors from zero, against a
+> $1.76 margin. And it biased toward *passing*, which is the worst direction for
 > a safety check. So the engine now raises a ValueError if you try to combine a
 > covariate with a row filter. It's the same failure mode as the original AOV
 > incident, which was a slightly unsettling thing to rediscover from the other
@@ -102,8 +106,8 @@ Legend: 🟢 basic · 🟡 intermediate · 🔴 hard / likely to separate candid
 
 **🟡 Q10. Estimate a sample size in your head.**
 > Use n ≈ 16·p(1−p)/Δ². It comes from (1.96 + 0.84)² ≈ 7.84 ≈ 8, doubled for two
-> arms. For 3.5% baseline and +8% relative: Δ = 0.0028, so
-> 16 × 0.035 × 0.965 / 0.0028² ≈ 69,000. The exact formula gives 70,229.
+> arms. For 3.5% baseline and +3% relative: Δ = 0.00105, so
+> 16 × 0.035 × 0.965 / 0.00105² ≈ 490,000. The exact formula gives 487,847.
 
 **🟡 Q11. Why is your baseline rate so important?**
 > Because for a fixed *relative* lift, Δ = p × MDE, so n grows roughly as 1/p.
@@ -126,12 +130,18 @@ Isn't that inconsistent?**
 > or you don't run it. What you must not do is run it and interpret a null result
 > as evidence of no effect.
 
-**🟡 Q14. Why did your single simulated experiment give +8.92% when the truth
-was +8%?**
-> Sampling variation. The 95% CI was [+0.119pp, +0.514pp] around a true 0.28pp,
-> so the truth sits comfortably inside. That's exactly why notebook 01's takeaway
-> section notes that a single run is one draw and that at 80% power, one in five
+**🟡 Q14. Why did your single simulated experiment give +4.70% when the truth
+was +3%?**
+> Sampling variation. The 95% CI was [+0.090pp, +0.238pp] around a true 0.105pp,
+> so the truth sits inside it, near the bottom. This one draw overstated the
+> effect by more than half. That's exactly why notebook 01's takeaway section
+> notes that a single run is one draw, and that at 80% power one in five
 > identical experiments would miss this real effect entirely.
+>
+> It's also a small demonstration of the winner's curse. The experiments that
+> clear significance are disproportionately the ones that drew high, so effect
+> sizes reported from "winning" tests run systematically optimistic. That's a
+> real reason to size a rollout's expected impact conservatively.
 
 ---
 
@@ -173,10 +183,10 @@ was +8%?**
 > Centring preserves the mean exactly, so adjusted values stay in dollars. I have
 > a unit test asserting mean preservation.
 
-**🔴 Q21. Why 39% on revenue but only 6% on conversion?** *(the key CUPED
+**🔴 Q21. Why 37% on revenue but only 6% on conversion?** *(the key CUPED
 question — give both answers)*
-> Surface answer: ρ(revenue, pre-period spend) is 0.625, so ρ² is 39%.
-> ρ(converted, pre-period sessions) is only 0.251, so ρ² is 6%. Spending habits
+> Surface answer: ρ(revenue, pre-period spend) is 0.611, so ρ² is 37%.
+> ρ(converted, pre-period sessions) is only 0.245, so ρ² is 6%. Spending habits
 > persist; a rare binary event doesn't.
 >
 > Deeper answer, from the law of total variance: for a binary outcome,
@@ -186,9 +196,9 @@ question — give both answers)*
 > property of rare binary outcomes*, not a failure of my covariate. No amount of
 > covariate engineering fixes it — the right move is a more sensitive metric.
 
-**🟡 Q22. Your CI narrowed 22% but variance dropped 39%. Why don't those match?**
+**🟡 Q22. Your CI narrowed 21% but variance dropped 37%. Why don't those match?**
 > Variance and sample size scale with (1 − ρ²); standard error and CI width scale
-> with its square root. √0.61 = 0.78, so the CI narrows by about 22%. Mixing
+> with its square root. √0.627 = 0.79, so the CI narrows by about 21%. Mixing
 > those two up is a common slip.
 
 **🔴 Q23. On real data CUPED gave you 0.04%. Was it a waste?**
@@ -292,10 +302,13 @@ most likely follow-up on this project)*
 > 0.03 fails its own threshold, but 0.04 passes its own, and that rescues both.
 
 **🔴 Q36. You only have two success metrics. Does BH actually do anything?**
-> Honestly, no. At m = 2 the thresholds are 0.025 and 0.05, and in every scenario
-> both p-values are far below either, so the correction changes no verdict. The
-> value is that the structure is correct and scales — add eight secondary metrics
-> and it starts doing real work. I'd rather say that than claim it mattered.
+> Honestly, no. At m = 2 the thresholds are 0.025 and 0.05, and the second one
+> *is* the uncorrected α. So BH can only change anything if the smaller p-value
+> lands between 0.025 and 0.05 while the larger is above 0.05. In my designed
+> experiment conversion is at 0.0003 and revenue at 0.054. Revenue fails, but it
+> would fail without correction too. The value is that the structure is correct
+> and scales — add eight secondary metrics and it starts doing real work. I'd
+> rather say that than claim it mattered.
 
 **🟡 Q37. Explain the verdicts.**
 > Four of them. INVALID: the assignment split doesn't match what was intended,
@@ -380,7 +393,7 @@ that overconservative?** *(give both sides)*
 >
 > The cause was my data generator. I had a single latent "user quality" factor
 > driving both conversion propensity and order value. When treatment lifted
-> conversion by 8%, the extra converters were marginal users — lower on that
+> conversion by 8% (the calibration at the time), the extra converters were marginal users — lower on that
 > quality factor — and under a single factor, lower quality meant smaller
 > baskets. So treatment's average order value fell with no causal effect on
 > order value at all.
@@ -615,7 +628,7 @@ that.** *(the most likely follow-up on the SRM work)*
 > 0.05 I'd throw away one perfectly healthy experiment in twenty, and each false
 > alarm costs an engineering investigation that finds nothing — which is exactly
 > how a check gets ignored and then deleted. Meanwhile a genuine SRM is orders
-> of magnitude more extreme: my 49/51 demo lands at p = 6e-14. So the strict
+> of magnitude more extreme: my 49/51 demo lands at p = 7e-87. So the strict
 > threshold costs essentially no detection power while nearly eliminating false
 > alarms. My validation gate measures both halves — 0.00035 false-alarm rate
 > over 20,000 fair-coin simulations, and 100% detection of a 49/51 bug.
@@ -707,7 +720,7 @@ that.** *(the most likely follow-up on the SRM work)*
 > method, because it's the only setting where you know the true answer and can
 > check that the machinery recovers it at the advertised rate. Then I ran the
 > same engine unchanged on real data, where the results were noticeably less
-> flattering — 0.04% CUPED gain instead of 39%, and an INVESTIGATE verdict
+> flattering — 0.04% CUPED gain instead of 37%, and an INVESTIGATE verdict
 > instead of a clean SHIP. If I were optimizing for a good-looking result, those
 > wouldn't be in the repo.
 
@@ -737,12 +750,14 @@ a yes or no. What do you say?**
 > reproducible record — and I'd keep the memo, because translating a verdict into
 > a business recommendation is the part most analysts skip.
 
-**🔴 Q85. What's the weakest claim in your README?**
-> The $660k annualized revenue projection. It's +$0.18 per user times 10,000
-> users a day times 365, and it assumes the measured effect persists across
-> seasons and doesn't decay after novelty. The memo labels it as an
-> if-the-lift-holds extrapolation, which is the right caveat, but it's still the
-> number a stakeholder would quote back at me in six months.
+**🔴 Q85. What's the weakest claim in your project?**
+> The projected impact. The memo books about 4,000 extra checkouts a year from
+> the conversion lift, and that assumes the effect persists across seasons and
+> doesn't decay after novelty. It's an if-the-lift-holds extrapolation. What I'd
+> defend is what the memo *doesn't* claim: revenue per user is up about six
+> cents, but at p = 0.054 it isn't significant, so the memo refuses to put a
+> dollar figure on it. An earlier version of this project did quote an
+> annualized revenue number, and taking it out was the right call.
 
 **🔴 Q86. Someone tells you CUPED is just a fancy name for regression
 adjustment. Are they right?**
@@ -759,7 +774,8 @@ adjustment. Are they right?**
 > sets it from the relative costs of the two errors — if shipping harm is
 > catastrophic, you want a much higher guardrail power floor, and you'd have to
 > pay for it in traffic. My AOV finding is exactly what that payment looks like:
-> going from 20% to 80% power on that guardrail costs about nine times the users.
+> going from 70% to 80% power on that guardrail costs about 1.3 times the users,
+> and getting to 90% costs about 1.8 times.
 
 **🔴 Q88. Is there anything in this project you'd now say was a mistake?**
 > Two, both since fixed. I built CUPED, proved it works, and then ran the
@@ -769,18 +785,22 @@ adjustment. Are they right?**
 > whose randomization was broken. What's still open is sequential testing, and
 > I'd rather name that than pretend the project is finished.
 
-**🔴 Q88b. Adding CUPED made one of your p-values worse. Doesn't that mean it
-hurt?** *(a great question to be ready for)*
-> No — and it's my favourite result in the project. On that seed, treatment
-> happened to draw users with $1.70 more pre-experiment spend, about 1.4
-> standard errors of chance imbalance. θ times that imbalance is $0.073, and the
-> revenue estimate duly fell from +$0.182 to +$0.113. So CUPED removed a chance
-> imbalance that was *inflating* the raw estimate — the raw number was partly
-> luck. That's the second thing CUPED does alongside variance reduction: it
-> corrects covariate imbalance. The standard error genuinely fell by 22%; the
-> point estimate just happened to fall further on this particular draw. Over 400
-> simulations the CUPED and raw estimators agree to within 0.06 Monte Carlo
-> standard errors, which is the unbiasedness check that matters.
+**🔴 Q88b. You wired in CUPED and revenue *still* isn't significant. So what
+did it buy you?** *(a great question to be ready for)*
+> A lot, just not enough. At the designed size, CUPED took revenue per user from
+> p = 0.136 to p = 0.054 and cut its standard error by about a fifth.
+> Conversion went from 0.0016 to 0.0003. So the variance reduction is real and
+> large, but a six-cent lift on a heavy-tailed metric is genuinely hard to
+> detect, and 0.054 is not 0.05. I didn't go looking for a seed or a covariate
+> that would push it over the line. That's why the memo doesn't book a revenue
+> number.
+>
+> CUPED also does a second thing: it corrects chance imbalance in the covariate
+> between arms, subtracting θ times the difference in covariate means. On this
+> seed that imbalance is tiny (−0.27 SE), so the estimate barely moved, from
+> +$0.048 to +$0.056. On another seed it could move either way. Over 400
+> simulations the two estimators agree to within Monte Carlo noise, which is the
+> unbiasedness check that matters.
 
 **🔴 Q89. What don't you know about experimentation that you wish you did?**
 > Practically, running at scale: the infrastructure side — assignment services,
@@ -801,16 +821,16 @@ hurt?** *(a great question to be ready for)*
 
 | Q | A |
 |---|---|
-| Sample size per arm? | 70,229 (140,458 total, 14 days at 10k/day) |
-| Baseline / MDE? | 3.5% conversion, +8% relative (Δ = 0.28pp) |
+| Sample size per arm? | 487,847 (975,694 total, ~98 days at 10k/day) |
+| Baseline / MDE? | 3.5% conversion, +3% relative (Δ ≈ 0.105pp) |
 | CUPED formula? | Y − θ(X − X̄), θ = Cov(Y,X)/Var(X) |
 | CUPED variance? | Var(Y)(1 − ρ²) |
-| CUPED on revenue? | ρ = 0.625 → 39% variance reduction, 22% CI narrowing |
-| CUPED on conversion? | ρ = 0.251 → 6.3% |
+| CUPED on revenue? | ρ = 0.611 → 37% variance reduction, 21% CI narrowing, 98 → 61 days |
+| CUPED on conversion? | ρ = 0.245 → 6.0% with sessions; 19% with pre-period spend (engine) |
 | CUPED on real data? | ρ = 0.0195 → 0.038% |
 | Guardrail power formula? | Φ(m/SE − z_{1−α}) |
-| AOV guardrail power at 70k/arm? | 20% |
-| Users needed for 80% AOV power? | ~650k/arm (~9×); project uses 900k for ~91% |
+| AOV guardrail power at the designed 488k/arm? | ~70% (floor is 80%) → INVESTIGATE |
+| Users needed for 80% AOV power? | ~650k/arm (~1.3×); demos use 900k for ~90% |
 | BH rule? | Largest k with p₍ₖ₎ ≤ (k/m)q, reject 1..k |
 | Why no BH on guardrails? | Correction fights Type I; guardrails fear Type II |
 | Verdict precedence? | harm → primary fail → inconclusive → ship |
@@ -818,11 +838,11 @@ hurt?** *(a great question to be ready for)*
 | Real-data verdict? | INVESTIGATE (guardrail power 13%) |
 | Halve the MDE? | 4× the sample size |
 | Rule of thumb? | n ≈ 16p(1−p)/Δ² |
-| Number of unit tests? | 26, all passing, ~3 seconds |
+| Number of unit tests? | 26, all passing, ~5 seconds |
 | SRM test? | Chi-square goodness of fit, 1 df, gated at p < 0.0005 |
 | Why 0.0005? | Runs on every experiment; 0.05 would discard 1 healthy test in 20 |
 | SRM gate G3d? | 0.00035 false-alarm rate, 100% detection of 49/51 |
 | Verdicts? | INVALID, SHIP, DO NOT SHIP, INVESTIGATE |
 | CUPED in the engine? | Both success metrics, covariate `pre_exp_spend` |
-| Why no CUPED on AOV? | Converters-only is post-treatment: +$0.70 bias vs a $1.18 margin |
+| Why no CUPED on AOV? | Converters-only is post-treatment: +$0.42 bias vs a $1.76 margin |
 | Biggest remaining gap? | No sequential testing (peeking) |

@@ -69,7 +69,7 @@ common rate $\bar{p}$. The unpooled version uses each arm's own variance.
 - Unpooled makes the test and the confidence interval agree — with pooled SE for
   the test and unpooled SE for the CI you can get a "significant" p-value with a
   CI that touches zero, which is confusing in a report.
-- At p ≈ 0.035 and n = 70,000 the two SEs differ in the fourth significant
+- At p ≈ 0.035 and n ≈ 488,000 the two SEs differ in the fourth significant
   figure. Immaterial.
 
 The code chooses **coherence between test and interval** over textbook purity,
@@ -140,8 +140,8 @@ $(z_{0.975} + z_{0.80})^2 = (1.96 + 0.84)^2 \approx 7.84 \approx 8$, so
 
 $$n \approx \frac{16\,p(1-p)}{\Delta^2}$$
 
-Check it: $16 \times 0.035 \times 0.965 / 0.0028^2 \approx 68{,}900$ against the
-exact 70,229. Close enough to sanity-check any sample size in your head — which
+Check it: $16 \times 0.035 \times 0.965 / 0.00105^2 \approx 490{,}000$ against the
+exact 487,847. Close enough to sanity-check any sample size in your head — which
 is a genuinely useful party trick in an interview.
 
 **Rare events are expensive.** Because $\Delta = p_1 \times \text{MDE}$, n grows
@@ -158,10 +158,10 @@ which is the next section, and which is why CUPED is interesting.
 | Input | Value |
 |---|---|
 | Baseline conversion | 3.5% |
-| MDE | +8% relative → 3.78% absolute (Δ = 0.0028) |
+| MDE | +3% relative → 3.605% absolute (Δ = 0.00105, about 0.1pp) |
 | α | 0.05 two-sided |
 | Power | 80% |
-| **Result** | **70,229 users/arm = 140,458 total = 14 days at 10k/day** |
+| **Result** | **487,847 users/arm = 975,694 total = ~98 days at 10k/day** |
 
 ### Why two-sided for design but one-sided for the decision?
 
@@ -229,11 +229,11 @@ method is captured by a single number, ρ.
 
 ### The three consequences (know all three, they get asked separately)
 
-| Quantity | Scaling | At ρ = 0.625 |
+| Quantity | Scaling | At ρ = 0.611 |
 |---|---|---|
-| Variance | $\times(1-\rho^2)$ | −39.0% |
-| Standard error / CI width | $\times\sqrt{1-\rho^2}$ | −21.9% |
-| Sample size for equal power | $\times(1-\rho^2)$ | −39.0% → 14 days becomes 8.6 |
+| Variance | $\times(1-\rho^2)$ | −37.4% |
+| Standard error / CI width | $\times\sqrt{1-\rho^2}$ | −20.8% |
+| Sample size for equal power | $\times(1-\rho^2)$ | −37.4% → 98 days becomes 61 |
 
 The CI narrows by $1 - \sqrt{1-\rho^2}$, **not** by $\rho^2$. Mixing these up is
 a classic slip: variance and sample size scale together; SE and CI width scale
@@ -275,11 +275,22 @@ Measured on this project's generator with a true AOV effect of exactly **zero**:
 
 | estimator | mean over 400 sims | distance from 0 |
 |---|---|---|
-| raw AOV | +$0.070 | 0.95 MC SE — noise |
-| CUPED AOV (covariate `pre_exp_spend`) | **+$0.703** | **12.2 MC SE — bias** |
+| raw AOV | −$0.007 | 0.17 MC SE — noise |
+| CUPED AOV (covariate `pre_exp_spend`) | **+$0.415** | **14.0 MC SE — bias** |
 
-Against a $1.18 margin, that is 60% of the entire tolerance — and it points
-**toward passing**, which is the worst possible direction for a safety check.
+Against a $1.76 margin, that is about a quarter of the entire tolerance — and it
+points **toward passing**, which is the worst possible direction for a safety
+check. (Over the same 400 simulations, CUPED on *all-user* revenue agrees with the
+raw estimate to within 0.6 MC SE: the method is fine, the filter is the problem.)
+
+**Why the size of the bias depends on the conversion lift.** The bias exists
+because treatment changes who converts. A bigger lift pulls in more marginal
+converters and shifts the converter pool's covariate mean further. Under the
+earlier 8% calibration the same simulation gave +$0.70 against a $1.18 margin
+(60% of it). The lift is now 3%, and 60% × 3/8 ≈ 23%, close to the 24% observed.
+The bias scales with how strongly treatment moves the filter variable. That
+is also why it is unsafe in principle and not just in this dataset: you cannot
+bound it without knowing the effect you are trying to measure.
 
 `MetricSpec.__post_init__` raises a `ValueError` on `covariate` +
 `filter_column` rather than warning in a docstring. The rule is the same one
@@ -306,12 +317,12 @@ Subtracting $\theta(X - \bar{X})$ preserves the mean exactly
 (`test_cuped_preserves_mean_and_reduces_variance`), so adjusted values stay
 interpretable as dollars.
 
-### Why revenue gained 39% but conversion only 6%
+### Why revenue gained 37% but conversion only 6%
 
 This is the most-asked CUPED question on this project. Have **two** answers.
 
-**Answer 1 — the correlation.** ρ(revenue, pre-period spend) = 0.625 →
-ρ² = 39%. ρ(converted, pre-period sessions) = 0.251 → ρ² = 6.3%. Spending
+**Answer 1 — the correlation.** ρ(revenue, pre-period spend) = 0.611 →
+ρ² = 37%. ρ(converted, pre-period sessions) = 0.245 → ρ² = 6.0%. Spending
 habits persist strongly; a rare binary event is far less predictable.
 
 **Answer 2 — the law of total variance (the deep answer).** For a binary Y with
@@ -341,8 +352,8 @@ ceiling as above), *and* a year-long aggregate is a coarse predictor of a
 two-week outcome. Same method, same math, different data.
 
 This is the most intellectually honest result in the project and you should
-volunteer it. "CUPED gave me 39% on simulated data and 0.04% on real data, and
-here is exactly why" is a much better story than 39% alone.
+volunteer it. "CUPED gave me 37% on simulated data and 0.04% on real data, and
+here is exactly why" is a much better story than 37% alone.
 
 ### The natural extension: CUPAC
 
@@ -460,30 +471,53 @@ realized data makes it available without a separate planning artifact.
 Say the caveat before the interviewer finds it. It converts a potential
 gotcha into evidence that you understand the subtlety.
 
-### Guardrail power is brutally expensive (the project's best finding)
+### Guardrail power is expensive — and the cost is relative to your MDE
 
-At the primary-powered n = 70,229/arm, the AOV guardrail has **20% power**.
+At the primary-powered n = 487,847/arm, the AOV guardrail has **~70% power** —
+short of the 80% floor, which is why the designed experiment returns
+INVESTIGATE.
 
-Why:
-1. AOV only exists for converters — ~3.5% of users. 70,229 users → ~2,400
+Why it falls short:
+1. AOV only exists for converters — ~3.5% of users. 487,847 users → ~17,000
    converters per arm.
-2. Order values are heavy-tailed lognormal: mean ≈ $59, SD ≈ $52.
-3. SE ≈ $1.44, while the 2% margin is only ≈ $1.18. The margin is *smaller than
-   one standard error*. The test cannot possibly resolve it.
+2. Order values are heavy-tailed lognormal: mean ≈ $89, SD ≈ $77.
+3. SE ≈ $0.82, while the 2% margin is ≈ $1.77. The margin is only **2.2
+   standard errors** wide, and Φ(2.16 − 1.645) ≈ 70%.
 
-To reach 80% power you need SE ≈ $0.474, which is a factor of
-$(1.44/0.474)^2 \approx 9.3$ more users — roughly **650,000 per arm**. The
-project uses 900,000/arm (≈12.8× the primary's n) for the SHIP/DO-NOT-SHIP
-demos, which buys ≈91% power.
+To reach 80% power the margin must be 1.645 + 0.842 ≈ 2.49 SEs wide, which
+takes $(2.49/2.16)^2 \approx 1.33\times$ the users — roughly **650,000 per arm**.
+The SHIP and DO-NOT-SHIP demos use 900,000/arm (≈1.84× the primary's n), which
+buys ≈90%.
 
 Contrast the error-rate guardrail: binary, 1.2% base rate, all users,
-SE ≈ 0.00059 against a 0.005 margin — 8.4 SEs of room, so power ≈ 100%.
+SE ≈ 0.00023 against a 0.005 margin — 22 SEs of room, so power ≈ 100%.
+
+**The insight that matters most: the guardrail's requirement does not depend
+on the MDE.** About 650,000 users/arm buys 80% AOV power whatever the primary's
+MDE is, because it is set entirely by the margin (2% of AOV) and order-value
+variance. (The AOV *level* doesn't matter either: a 2% margin and the SD both
+scale with the mean, so their ratio is unchanged.) What the MDE changes is the
+**primary** sample size, and so the *ratio* between the two:
+
+| Primary MDE | Primary n/arm | AOV guardrail at that n | n/arm for 80% AOV power | Ratio |
+|---|---|---|---|---|
+| +8% (earlier calibration) | 70,229 | ~20% power | ~650,000 | ~9× |
+| **+3% (current)** | **487,847** | **~70% power** | **~650,000** | **~1.3×** |
+
+If you learned the earlier figures (20% power, 9× traffic), this is why they
+changed: an ambitious 8% MDE made the primary cheap, so the guardrail looked
+enormously expensive by comparison. A realistic 3% MDE makes the primary
+expensive too, and the guardrail is nearly covered by the primary's own traffic.
+"How expensive are guardrails?" has no fixed answer; it is a ratio, and you
+should say which MDE it is relative to.
 
 **The general lesson:** guardrail power is driven by *margin ÷ standard error*.
-Tight margins on high-variance, small-subpopulation metrics are untestable at
-realistic traffic. Real teams respond by widening the margin, moving to an
-all-user formulation, or accepting the Type II risk explicitly. This engine's
-contribution is that it **surfaces the trade-off instead of hiding it.**
+Tight margins on high-variance, small-subpopulation metrics need traffic you
+may not have. Real teams respond by widening the margin, moving to an all-user
+formulation, or accepting the Type II risk explicitly. This engine's
+contribution is that it **surfaces the trade-off instead of hiding it** — and
+checking guardrail power at *design* time, not after the experiment, is how
+you avoid a surprise INVESTIGATE.
 
 ---
 
@@ -495,7 +529,7 @@ Every test in §1–§4 assumes one thing: the two arms differ **only** by
 treatment. Randomization is what buys that, and SRM is how you check the
 randomization actually happened.
 
-If 140,458 users were meant to split 50/50 and 68,824 landed in treatment, that
+If 975,694 users were meant to split 50/50 and 478,090 landed in treatment, that
 is not bad luck — it is a bug in assignment, logging, bot filtering or the
 analysis join. And the users who went missing are almost never a random subset
 (a crash on a particular device, a filter that drops one arm's bots harder), so
@@ -520,7 +554,7 @@ The SRM check runs on *every* experiment. At α = 0.05 you would throw away one
 perfectly healthy experiment in twenty — and each false alarm costs an
 engineering investigation that finds nothing, which is how a check gets ignored
 and then removed. Meanwhile a genuine SRM produces a p-value orders of
-magnitude below 0.0005: the 49/51 demo lands at **6e-14**. So the strict
+magnitude below 0.0005: the 49/51 demo lands at **7e-87**. So the strict
 threshold costs essentially no detection power while nearly eliminating false
 alarms.
 
@@ -617,9 +651,13 @@ Experiments*) and Spotify's published guardrail decision framework.
 
 ### Honest limitation
 
-With only two success metrics, BH at q = 0.05 has thresholds 0.025 and 0.05 —
-barely different from no correction, and in every scenario in this project both
-p-values are far below either. **The correction changes no verdict here.** Say
+With only two success metrics, BH at q = 0.05 has thresholds 0.025 (rank 1) and
+0.05 (rank 2). The rank-2 threshold *is* the uncorrected α, so at m = 2 BH can
+only ever change an outcome in one narrow case: the smaller p-value lands
+between 0.025 and 0.05 **and** the larger lands above 0.05. That case never
+occurs here. In the designed experiment conversion has p = 0.0003 and revenue
+p = 0.054; revenue fails the rank-2 threshold of 0.05, but it would fail an
+uncorrected 0.05 just the same. **The correction changes no verdict here.** Say
 so. The value is that the *structure* is correct and scales: add eight more
 secondary metrics and the correction starts doing real work. Claiming it
 mattered when it didn't is the kind of overstatement interviewers pounce on.
@@ -723,7 +761,7 @@ asserts the exactness to within 0.002 on 400,000 users.
 
 | Metric | Mechanism | Ground truth |
 |---|---|---|
-| Conversion | threshold shifted so marginal rate = `p·(1+lift)` | +8% relative |
+| Conversion | threshold shifted so marginal rate = `p·(1+lift)` | +3% relative |
 | Order value | multiplicative `× (1 + aov_effect)` on converters | −1% relative |
 | Error rate | additive on the Bernoulli parameter | +0.1pp absolute |
 

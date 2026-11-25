@@ -245,7 +245,7 @@ in the renderer, the dashboard and the notebook could disagree.
 This is a distinction worth making explicitly in an interview, because most
 portfolio projects have neither and almost none have both.
 
-### `tests/test_stats.py` — unit tests (26 tests, ~3 seconds)
+### `tests/test_stats.py` — unit tests (26 tests, ~5 seconds)
 Deterministic, fast, assert *properties of functions*:
 - our formula agrees with `statsmodels` within 1%
 - `achieved_power` inverts `required_sample_size_per_arm`
@@ -295,8 +295,10 @@ understand the error bars on my simulation."
 | `reports/decision_memo.md` | product leadership | the deliverable a real analyst ships: a recommendation, not a p-value |
 
 The memo matters more than it looks. It translates INVESTIGATE into a business
-action ("phased rollout with a pre-agreed pause rule"), quantifies the upside
-(~$660k/year), and states its own caveats. Interviewers for analytics roles
+action ("phased rollout with a pre-agreed pause rule"), quantifies the upside it
+can defend (~4,000 extra checkouts a year) while *refusing* to book a dollar
+figure on the revenue lift because that lift is not statistically established,
+and states its own caveats. Interviewers for analytics roles
 read that as evidence you can operate with stakeholders, which is usually the
 scarcer skill.
 
@@ -310,7 +312,7 @@ scarcer skill.
   the formula in the docstring is what makes the code auditable by a
   statistician who does not read Python.
 - **`ddof=1`** on every variance — sample variance, not population. Irrelevant
-  numerically at n = 70,000; correct by principle, and free.
+  numerically at n ≈ 488,000; correct by principle, and free.
 - **`sys.path.insert(0, "..")`** at the top of each notebook and the dashboard,
   so the repo root is importable without packaging. Honest assessment: this is
   the least defensible pattern in the project. The proper fix is a
@@ -323,19 +325,19 @@ scarcer skill.
 
 ```
 config.py
-   |  CONTROL_CONVERSION_RATE = 0.035, MDE_RELATIVE = 0.08, ALPHA, POWER_TARGET
+   |  CONTROL_CONVERSION_RATE = 0.035, MDE_RELATIVE = 0.03, ALPHA, POWER_TARGET
    v
-src/power.required_sample_size_per_arm(0.035, 0.08)  ->  70,229 per arm
+src/power.required_sample_size_per_arm(0.035, 0.03)  ->  487,847 per arm (~98 days)
    |
    v
-data.generate_experiment_data(n_users=140_458, seed=204)  ->  DataFrame
-   |
-   +--> src.cuped.cuped_adjust(revenue, pre_exp_spend)  ->  39% less variance
+data.generate_experiment_data(n_users=975_694, seed=204)  ->  DataFrame
    |
    v
 src.decision_engine.evaluate_experiment(df, default_metric_specs())
    |
-   +-- success:   superiority_test x2  ->  p-values  ->  benjamini_hochberg
+   +-- SRM gate:  sample_ratio_mismatch  ->  mismatch? return INVALID, no metrics
+   +-- success:   cuped_adjust (pre_exp_spend: -19% conversion, -38% revenue variance)
+   |              -> superiority_test x2  ->  p-values  ->  benjamini_hochberg
    +-- guardrail: non_inferiority_test x2  ->  ni_passed / inferior / power
    |
    v

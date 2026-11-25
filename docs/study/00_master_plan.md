@@ -83,7 +83,7 @@ Goal: derive `θ* = Cov(Y,X)/Var(X)` by minimizing the adjusted variance, and
 derive `Var(Y_cuped) = Var(Y)(1 − ρ²)` from it. Then explain in plain English
 why the estimator stays unbiased.
 
-**Exit test:** "Why did CUPED cut revenue variance by 39% but conversion
+**Exit test:** "Why did CUPED cut revenue variance by 37% but conversion
 variance by only 6%?" Answer it twice: once with the correlation argument, once
 with the law-of-total-variance argument. Both are in §3.
 
@@ -147,9 +147,9 @@ machinery.
 
 | Notebook | The story it tells | The one number to remember |
 |---|---|---|
-| 01 power analysis | "Before running anything, we asked how much traffic a +8% lift needs." | 70,229 users/arm = 14 days |
-| 02 CUPED | "Then we made the same traffic go further." | 39% variance reduction on revenue, 6% on conversion |
-| 03 decision engine | "Then we turned results into a decision that respects risk." | SHIP / DO NOT SHIP / INVESTIGATE |
+| 01 power analysis | "Before running anything, we asked how much traffic a +3% lift needs." | 487,847 users/arm = ~98 days |
+| 02 CUPED | "Then we made the same traffic go further." | 37% variance reduction on revenue (98 → 61 days), 6% on conversion |
+| 03 decision engine | "Then we turned results into a decision that respects risk." | INVALID / SHIP / DO NOT SHIP / INVESTIGATE |
 | 04 real data | "Then we proved it survives contact with real data." | Verdict INVESTIGATE at 13% guardrail power |
 
 ---
@@ -168,7 +168,7 @@ Every question has three possible depths. Read the room and pick one.
 Example, on CUPED:
 
 - L1: "We used customers' past behaviour to cancel out noise, so the experiment
-  needed 39% less traffic for the same confidence."
+  needed 37% less traffic for the same confidence -- about 61 days instead of 98."
 - L2: "CUPED regresses the outcome on a pre-experiment covariate and subtracts
   the predictable part. Because the covariate predates randomization, treatment
   cannot affect it, so the estimator stays unbiased while variance drops by a

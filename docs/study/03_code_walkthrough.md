@@ -63,8 +63,11 @@ the target windows ρ(revenue, pre-spend) ∈ [0.55, 0.75] and
 calibration cannot silently drift.
 
 Note `SPEND_LOG_MEAN = 3.6` → median pre-spend ≈ $36.6 over 4 weeks, and
-`ORDER_LOG_MEAN = 3.8` → median order ≈ $44.7 (mean ≈ $59 after the lognormal
-variance inflation). Plausible e-commerce numbers, which matters for the memo.
+`ORDER_LOG_MEAN = 4.2` → median order ≈ $67 (mean ≈ $88 after the lognormal
+variance inflation), in line with mid-market e-commerce AOV. Plausible numbers
+matter for the memo. Changing this constant is a pure *scale* change: Pearson
+correlations and the 2%-relative margin's ratio to the SD are both
+scale-invariant, so no statistical result depends on it.
 
 The comment block above these constants explains the two-latent design and is
 the surviving record of the selection-bias incident. Read it.
@@ -606,15 +609,19 @@ down and watch the sample size explode quadratically. If you demo one thing
 live, demo this.
 
 **Tab 2 — Variance Reduction.** `@st.cache_data` on `cuped_results()` — without
-it, Streamlit re-simulates 140,458 users on every interaction. The cache is
+it, Streamlit re-simulates 975,694 users on every interaction. The cache is
 keyed on function arguments, so this zero-argument function computes once per
 session. Shows ρ, variance reduction, runtime saved, and raw-vs-CUPED CI plots
 side by side.
 
-**Tab 3 — Decision.** Three preset scenarios (as-designed 70k/arm; SHIP at
-900k/arm with zero AOV harm; DO NOT SHIP at 900k/arm with −5% AOV harm), a radio
+**Tab 3 — Decision.** Four preset scenarios (as-designed at the config-derived
+n of ~488k/arm; SHIP at 900k/arm with zero AOV harm; DO NOT SHIP at 900k/arm with
+−5% AOV harm; INVALID with a broken 49/51 split at the designed n), a radio
 selector, and a colour-coded verdict banner via
-`BANNER = {"SHIP": st.success, "DO NOT SHIP": st.error, "INVESTIGATE": st.warning}`
+`BANNER = {"SHIP": st.success, "DO NOT SHIP": st.error, "INVESTIGATE": st.warning, "INVALID": st.error}`.
+The designed n is computed from `config` rather than hard-coded, so the
+dashboard cannot drift out of step with a recalibration -- it previously
+hard-coded 70,229, which silently turned into a DO NOT SHIP once the MDE changed
 — a dict dispatch to Streamlit functions, which is a tidy way to avoid a
 three-branch if. Then a bordered container per metric with effect, bound, p,
 power and status.
@@ -624,7 +631,7 @@ why `run_scenario` is cached too, and why there is an `st.spinner`.
 
 ---
 
-## `tests/test_stats.py` — 26 tests, ~3 seconds
+## `tests/test_stats.py` — 26 tests, ~5 seconds
 
 | Test | What it pins down |
 |---|---|
@@ -648,7 +655,7 @@ why `run_scenario` is cached too, and why there is an `st.spinner`.
 | `test_metric_spec_refuses_cuped_behind_a_post_treatment_filter` | the bias rule is enforced, not documented |
 | `test_metric_spec_validates_kind_and_margin` | bad kind and margin-less guardrail raise |
 | `test_engine_cuped_shrinks_the_standard_error_without_moving_the_verdict` | SE ratio = √(1 − variance reduction) |
-| `test_engine_cuped_matches_the_documented_reductions` | the claimed 39% / 19% are real |
+| `test_engine_cuped_matches_the_documented_reductions` | the claimed 38% / 19% are real |
 | `test_engine_filter_column_is_not_hardcoded` | an arbitrary filter column works |
 
 **The testing craft point worth making in an interview:** statistical tests are
@@ -699,7 +706,8 @@ against the theoretical `q·m0/m = 0.025`, gated on both `fdr ≤ q` and within
 3 MC standard errors. G3c the three canonical scenarios produce their verdicts.
 
 `SHIP_SCENARIO_N_PER_ARM = 900_000` with a comment explaining *why* that number:
-the AOV guardrail needs ~13× the primary's traffic to be adequately powered. The
+the AOV guardrail needs ~650k users/arm for 80% power and ~900k for ~90%,
+which is ~1.8× the primary's traffic. The
 constant documents the finding.
 
 G3c's honest framing, stated in the module docstring: scenario seeds are **fixed
@@ -713,21 +721,24 @@ statistical claim — and saying so prevents overclaiming.
 
 **01 — Power analysis.** Sample size at several MDEs, the power-curve figure,
 then one simulated experiment at the recommended n analysed with
-`statsmodels.proportions_ztest`. Result: +0.3161pp absolute (+8.92% relative),
-95% CI [+0.119pp, +0.514pp], z = 3.138, p = 0.0017. The takeaway section makes
-the key honest point — with 80% power, **1 in 5 identical experiments would miss
+`statsmodels.proportions_ztest`. Result: +0.164pp absolute (+4.70% relative,
+against a true +3%), 95% CI [+0.090pp, +0.238pp], z = 4.365, p < 0.0001. This
+draw *overstates* the true effect by more than half, though its CI still
+contains the true 0.105pp. The takeaway section makes the key honest point — with 80% power, **1 in 5 identical experiments would miss
 this real effect**, and that a single run is one draw.
 
 **02 — CUPED.** Same experiment (same seed), both metrics adjusted.
-Revenue: θ = 0.0433, ρ = 0.625, variance −39.0%, CI −21.9%, p 0.0018 → 0.0003.
-Conversion: θ = 0.0182, ρ = 0.251, variance −6.3%, CI −3.2%. Then converts
-variance reduction into days: revenue 14 → 8.6 days, conversion 14 → 13.2.
+Revenue: θ = 0.0589, ρ = 0.611, variance −37.3%, CI −20.8%, p 0.0050 → 0.0024.
+Conversion: θ = 0.0174, ρ = 0.245, variance −6.0%, CI −3.0%. Then converts
+variance reduction into days: revenue 97.6 → 61.1 days, conversion 97.6 → 91.7.
 The observed reduction matches theoretical ρ² to the decimal, in both cases.
 
-**03 — Decision engine.** The three scenarios with full rendered reports. The
+**03 — Decision engine.** All four verdicts with full rendered reports. The
 framing to steal for interviews: *"the sample size that suffices for conversion
-leaves the AOV guardrail at only ~20% power — relative to what the guardrails
-need, the primary-powered sample size IS the underpowered case."*
+still leaves the AOV guardrail at only ~70% power, short of the 80% floor —
+relative to what the guardrails need, the primary-powered sample size is the
+underpowered case."* It also shows revenue per user failing to reach
+significance at the designed size (p = 0.054 even with CUPED).
 
 **04 — Real data (Hillstrom).** 64,000 customers, MineThatData 2008.
 Restricted to Womens E-Mail vs No E-Mail (dropping the Mens arm, because the
@@ -759,11 +770,13 @@ live order-value monitoring and a pre-agreed automatic pause rule."** That is
 what INVESTIGATE translates to in business terms: capture the upside while the
 growing sample settles the open question.
 
-It quantifies the upside (+$0.18/user × 10,000 users/day × 365 ≈ **$660k/year**,
-~11,600 extra checkouts) and immediately labels it an *if-the-lift-holds
-extrapolation, not a guarantee*. It explains the inconclusive guardrail in plain
-language ("order value is only measurable on the ~3.5% of users who buy, so
-verifying it at our standards needs roughly 13× the traffic — about six months")
+It quantifies the upside it can defend (~4,000 extra completed checkouts a year
+from the significant conversion lift) and **deliberately refuses to book a
+dollar figure on revenue**, because the +$0.06/user revenue lift is not
+statistically established (p = 0.054). That refusal is the most mature thing in
+the memo. It explains the inconclusive guardrail in plain language ("the test
+reaches only ~70% power on this metric ... reaching our 80% standard needs
+roughly 1.3x the traffic, about one more month")
 and explicitly separates analytics calls from business calls ("widening the
 tolerance needs finance's sign-off; that is a business call, not an analytics
 call").

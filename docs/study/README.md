@@ -5,6 +5,13 @@ interview: architecture, statistical theory derived from first principles, a
 complete code walkthrough, the design decisions and their alternatives, an
 honest account of the weaknesses, and a rehearsable question bank.
 
+**Calibration.** Every number in these notes comes from the current config: a
+**+3% MDE** on a 3.5% baseline, which needs **487,847 users per arm (~98 days)**.
+An earlier version of the project used an optimistic 8% MDE (70,229 users/arm,
+14 days). Where an old figure is mentioned, it is labelled as the earlier
+calibration and kept on purpose, because how the numbers changed is itself
+worth understanding (see `02_theory.md`, "Guardrail power is expensive").
+
 Read in order:
 
 | File | What it covers |

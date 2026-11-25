@@ -12,12 +12,20 @@ Do not try to memorize a derivation — practise producing it.
 | Quantity | Value |
 |---|---|
 | Baseline conversion | 3.5% |
-| MDE | +8% relative → 3.78% (Δ = 0.0028 = 0.28pp) |
+| MDE | +3% relative → 3.605% (Δ = 0.00105 ≈ 0.1pp) |
 | α | 0.05 (two-sided for sizing) |
 | Target power | 80% |
-| **Sample size** | **70,229 per arm, 140,458 total** |
+| **Sample size** | **487,847 per arm, 975,694 total** |
 | Traffic assumption | 10,000 users/day |
-| **Duration** | **14 days** |
+| **Duration** | **~98 days (97.6)** |
+
+Why 3% and not 8%: the project was recalibrated to a realistic effect size.
+Typical winning e-commerce tests lift conversion by low single digits, and
+Kohavi et al. note most real effects are 1–3%. 8% was an optimistic demo value
+that made the primary test look cheap (70,229/arm, 14 days). Halving an MDE
+quadruples n; going from 8% to 3% should multiply it by about (8/3)² ≈ 7.1. The
+actual ratio is 487,847 / 70,229 ≈ 6.9, slightly less, because the variance
+terms in the formula shrink a little as p₂ moves closer to p₁.
 
 ### Standard normal quantiles (know these cold)
 
@@ -29,27 +37,38 @@ Do not try to memorize a derivation — practise producing it.
 | z₀.₉₀ (90% power) | 1.282 |
 | (1.96 + 0.84)² | 7.84 ≈ 8 |
 
-### The observed experiment (seed 42 / 204, 70,229 per arm)
+### Notebooks 01–02: one simulated experiment (seed 42, 487,847/arm)
 
 | Metric | Value |
 |---|---|
-| Control conversion | 3.5427% |
-| Treatment conversion | 3.8588% |
-| Absolute lift | +0.3161pp, 95% CI [+0.119, +0.514] |
-| Relative lift | +8.92% |
-| z / p | 3.138 / 0.0017 |
-| Revenue per user effect | +$0.18 |
-| Converters per arm | ~2,400 |
-| AOV control mean / SD | ~$59 / ~$52 |
+| Control conversion | 3.4876% |
+| Treatment conversion | 3.6516% |
+| Absolute lift | +0.164pp, 95% CI [+0.090, +0.238] (truth: +0.105pp) |
+| Relative lift | +4.70% (truth: +3%) — one draw, overstating by >50% |
+| z / p | 4.365 / < 0.0001 |
+
+### The engine on the designed experiment (seed 204, 487,847/arm) — verdict INVESTIGATE
+
+| Metric | Raw | With CUPED | Status |
+|---|---|---|---|
+| Conversion (primary) | +0.110pp, p = 0.0016 | **+0.115pp, p = 0.0003** | PASS |
+| Revenue per user | +$0.048, p = 0.136 | **+$0.056, p = 0.054** | FAIL (not significant) |
+| AOV guardrail | −$1.37, bound −$2.73 vs margin −$1.77 | not adjusted (unsafe) | INCONCLUSIVE, **70% power** |
+| Error-rate guardrail | +0.07pp vs +0.5pp margin | not adjusted (no covariate) | PASS (within-margin harm) |
+
+Converters per arm ≈ 17,000. Control AOV mean / SD ≈ $89 / $77.
 
 ### CUPED
 
 | Case | ρ | Variance reduction | CI narrowing |
 |---|---|---|---|
-| Synthetic revenue (covariate: pre-period spend) | 0.625 | 39.0% | 21.9% |
-| Synthetic conversion (covariate: **pre-period spend**, used by the engine) | 0.435 | 18.9% | 10.0% |
-| Synthetic conversion (covariate: pre-period sessions, notebook 02) | 0.251 | 6.3% | 3.2% |
+| Synthetic revenue (covariate: pre-period spend, seed 42) | 0.611 | 37.3% | 20.8% |
+| Synthetic conversion (covariate: **pre-period spend**, used by the engine) | 0.430 | 18.5% | 9.7% |
+| Synthetic conversion (covariate: pre-period sessions, notebook 02) | 0.245 | 6.0% | 3.0% |
 | Real spend (covariate: prior-year history) | 0.0195 | 0.038% | 0.02% |
+
+In the engine at seed 204 the two success metrics lose 37.9% (revenue) and
+18.6% (conversion) of variance — the same story, a different draw.
 
 **Why the engine uses pre-period spend for conversion too:** spend loads far
 more heavily on the frequency latent that drives conversion than session count
@@ -57,31 +76,35 @@ does, so it is the better covariate on *both* metrics (19% vs 6%). Notebook 02
 keeps the sessions covariate to contrast a strong and a weak one.
 
 **Guardrail covariates: none, for two different reasons.** AOV is converters-only,
-and CUPED behind a post-treatment filter is *biased* — +$0.70 against a $1.18
-margin when the true effect is zero (12 MC SE over 400 sims), biased toward
+and CUPED behind a post-treatment filter is *biased* — +$0.42 against a $1.76
+margin when the true effect is zero (14 MC SE over 400 sims), biased toward
 passing. `MetricSpec` raises on it. The error rate has no useful covariate
 (ρ = 0.002) and already has ~100% power.
 
-**The seed-204 imbalance story (memorize this one):** treatment drew $1.70 more
-pre-experiment spend by chance (+1.42 SE). θ × 1.697 = $0.0735, and the revenue
-estimate fell from +$0.182 to +$0.113 — a drop of $0.069. CUPED removed a chance
-imbalance that was inflating the raw estimate. Its p-value got *worse*
-(0.010 → 0.032) because the raw result was partly luck.
+**The CUPED story to tell (memorize this one):** CUPED cut revenue's p-value
+from 0.136 to 0.054 and its standard error by about a fifth, and it was still
+not enough. A six-cent lift on a heavy-tailed metric is hard to detect even
+with variance reduction, and the memo refuses to book revenue as a result.
 
-θ values: revenue 0.0433, conversion 0.0182, real-data 0.001035.
-Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
+θ values: revenue 0.0589, conversion (sessions) 0.0174, real-data 0.001035.
+Duration effect: revenue 97.6 → 61.1 days; conversion 97.6 → 91.7 days.
 
 ### Guardrails
 
 | | AOV | Checkout error rate |
 |---|---|---|
-| Margin | 2% relative (≈ $1.18) | 0.5pp absolute |
+| Margin | 2% relative (≈ $1.77) | 0.5pp absolute |
 | Population | converters only (~3.5%) | all users |
-| SE at 70k/arm | ≈ $1.44 | ≈ 0.00059 |
-| Margin ÷ SE | 0.82 | 8.4 |
-| **Power at 70k/arm** | **20%** | **~100%** |
-| n for 80% power | ~650k/arm (~9×) | already there |
-| n used in demos | 900k/arm (~91% power) | — |
+| SE at 488k/arm | ≈ $0.82 | ≈ 0.00023 |
+| Margin ÷ SE | 2.16 | 22 |
+| **Power at 488k/arm** | **~70%** | **~100%** |
+| n for 80% power | ~650k/arm (~1.3×) | already there |
+| n used in demos | 900k/arm (~1.8×, ~90% power) | — |
+
+**The point to make:** ~650k/arm for 80% AOV power is the *same* under the old
+8% calibration and the new 3% one. It depends on the margin and order-value
+variance, not on the MDE. Only the ratio to the primary changed: ~9× at 8%,
+~1.3× at 3%.
 
 ### Real data (Hillstrom)
 
@@ -104,7 +127,8 @@ Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
 | Test | Chi-square goodness of fit, 2 cells, 1 df |
 | Gate | p < 0.0005 (`config.SRM_ALPHA`), not 0.05 |
 | Why | Runs on every experiment; 0.05 discards 1 healthy test in 20 |
-| Demo mismatch | 49/51 at 140,458 users → chi² = 56.2, **p = 6e-14** |
+| Demo mismatch | 49/51 at 975,694 users → chi² = 390, **p = 7e-87** |
+| A 49.9/50.1 split at the same n | p ≈ 0.05 — a fair coin does this 1 time in 20 |
 | G3d false-alarm rate | 0.00035 over 20,000 fair-coin sims |
 | G3d detection | 100% on a 49/51 bug |
 | Hillstrom | 21,387 / 21,306 → p = 0.695, passes cleanly |
@@ -114,9 +138,10 @@ Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
 
 | | Value |
 |---|---|
-| Revenue per user lift | +$0.18 |
-| Annualized | ≈ $660,000/year |
-| Extra checkouts/year | ≈ 11,600 |
+| Conversion lift | +0.11pp (~+3% relative), significant |
+| Extra checkouts/year | ≈ 4,000 |
+| Revenue per user lift | +$0.06, **not** significant (p = 0.054) |
+| Dollar figure booked | **none** — deliberately, because revenue is not established |
 | Recommendation | Phased rollout (25 → 50 → 100%) with auto-pause rule |
 
 ### Code
@@ -124,7 +149,7 @@ Duration effect: revenue 14 → 8.6 days; conversion 14 → 13.2 days.
 | | Value |
 |---|---|
 | Total Python | ~1,580 lines, 11 files |
-| Unit tests | 26, ~3 seconds, all passing |
+| Unit tests | 26, ~5 seconds, all passing |
 | Validation gates | 11 (G1a–d, G2a–c, G3a–d) |
 | Simulations per gate | 1,000–5,000 |
 | `src/cuped.py` | 51 lines — the whole method |
@@ -162,12 +187,12 @@ point about adding guardrails to loosen the others.
 ### Drill 5b — Why the SRM gate uses 0.0005 (target: 60 seconds, verbal)
 The false-alarm-budget argument: the check runs on every experiment, a real SRM
 is orders of magnitude more extreme anyway, and a check that cries wolf gets
-deleted. Then the numbers: 6e-14 on the demo, 0.00035 false-alarm rate in G3d.
+deleted. Then the numbers: 7e-87 on the demo, 0.00035 false-alarm rate in G3d.
 
 ### Drill 5c — Why CUPED is refused on AOV (target: 60 seconds, verbal)
 Unbiasedness needs E[X̄_T] = E[X̄_C], randomization gives it only on the full
 randomized population, converters-only is post-treatment, so the arms' covariate
-means genuinely differ. Then the number: +$0.70 against a $1.18 margin, biased
+means genuinely differ. Then the number: +$0.42 against a $1.76 margin, biased
 toward passing.
 
 ### Drill 6 — The selection bias story (target: 90 seconds, verbal)
@@ -210,7 +235,7 @@ Score yourself. Any "no" is your next study session.
 - [ ] Derive the variance reduction
 - [ ] Prove unbiasedness
 - [ ] Explain pooled vs per-arm θ
-- [ ] Explain 39% vs 6% *two different ways*
+- [ ] Explain 37% vs 6% *two different ways*
 - [ ] Explain why CI narrowing ≠ variance reduction
 - [ ] Explain the real-data 0.04% result
 - [ ] Define CUPAC
@@ -238,7 +263,8 @@ Score yourself. Any "no" is your next study session.
 - [ ] Explain why INVALID withholds all metrics
 - [ ] Explain why INVALID is separate from DO NOT SHIP
 - [ ] Explain why CUPED is refused behind a post-treatment filter, with the number
-- [ ] Explain why a CUPED p-value got *worse* on seed 204
+- [ ] Explain what CUPED bought revenue (0.136 → 0.054) and why it still isn't significant
+- [ ] Explain why ~650k/arm for 80% AOV power didn't change when the MDE did
 
 **Weaknesses**
 - [ ] Name five genuine weaknesses unprompted
@@ -283,8 +309,8 @@ argument is testing something more important than whether you were right.
 
 Deploy naturally, not as a checklist.
 
-- "The correction changes no verdict here — with two metrics the thresholds are
-  nearly identical to no correction. The value is that the structure scales."
+- "The correction changes no verdict here — at two metrics, BH's second
+  threshold is the uncorrected α. The value is that the structure scales."
 - "That's not post-hoc power in the discredited sense, but there is a fair
   caveat, which is that I plug in the realized SE."
 - "I'd use the library in production. I wrote it out here to show I understand
@@ -308,5 +334,5 @@ Deploy naturally, not as a checklist.
 - "CUPED made the effect bigger." (It reduces *variance*; the estimate is
   unbiased and shouldn't systematically move.)
 - "I used machine learning." (You didn't, and this project is better for it.)
-- Any overclaim about BH mattering at m = 2, or about the $660k being a forecast
-  rather than an extrapolation.
+- Any overclaim about BH mattering at m = 2, or any dollar figure for the revenue
+  lift — it is not statistically established.

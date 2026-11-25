@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 data/*.csv
 project_log.md
+academic/

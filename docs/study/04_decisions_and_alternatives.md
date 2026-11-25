@@ -32,7 +32,7 @@ rather than a *method*, simulation would be worthless.
 
 **The pushback to expect:** *"You designed the data to make your method look
 good."* Answer: the generator is a test harness, not evidence. And the real-data
-result is deliberately unflattering — CUPED delivered 0.04% instead of 39%, and
+result is deliberately unflattering — CUPED delivered 0.04% instead of 37%, and
 the engine returned INVESTIGATE rather than a clean SHIP. If the goal were
 flattery, those results would have been buried.
 
@@ -191,9 +191,11 @@ where a single false positive is catastrophic. Bonferroni also loses power fast
 as m grows.
 
 **The honest limitation:** with m = 2 success metrics, BH thresholds are 0.025
-and 0.05 — nearly identical to no correction, and in every scenario here both
-p-values are far below either. **The correction changes no verdict in this
-project.** Say so. The value is a structure that scales; claiming it mattered
+and 0.05, and the rank-2 threshold equals the uncorrected α. BH can only bite
+when the smaller p-value is in (0.025, 0.05] and the larger is above 0.05. In
+the designed experiment conversion is at p = 0.0003 and revenue at p = 0.054, so
+revenue fails, but it would fail without correction too. **The correction
+changes no verdict in this project.** Say so. The value is a structure that scales; claiming it mattered
 when it didn't is exactly what gets caught.
 
 ---
@@ -220,7 +222,7 @@ caller must pool and split afterwards. The right thing is the easy thing.
 **Why:** pooled is the more correct *null* variance for a test, but using pooled
 for the test and unpooled for the CI lets a "significant" p-value coexist with a
 CI that touches zero — confusing in a stakeholder report. Unpooled keeps test
-and interval **coherent**. At p ≈ 0.035 and n = 70,000 the two differ in the
+and interval **coherent**. At p ≈ 0.035 and n ≈ 488,000 the two differ in the
 fourth significant figure.
 
 This is an engineering trade-off, not a statistical error, and framing it that
@@ -237,7 +239,7 @@ than reciting the formula.
 correction matters below roughly n = 100.
 
 **When the alternative wins:** revenue is zero-inflated with a heavy lognormal
-tail, so at *small* n the CLT could struggle. At n = 70,000 with ~2,400 nonzero
+tail, so at *small* n the CLT could struggle. At n ≈ 488,000 with ~17,000 nonzero
 values per arm it is fine, but a bootstrap or a permutation test would be the
 robust choice for a smaller experiment, and trimming/winsorizing is standard
 practice for revenue metrics in industry. Know that answer.
@@ -413,7 +415,7 @@ report metrics; (c) fold it into DO NOT SHIP.
 healthy experiment in twenty. Each false alarm costs an engineering
 investigation that finds nothing, which is how a check gets ignored and then
 deleted. A real SRM is orders of magnitude more extreme anyway — the 49/51 demo
-lands at p = 6e-14 — so the strict threshold costs almost no detection power.
+lands at p = 7e-87 — so the strict threshold costs almost no detection power.
 G3d measures both halves: 0.00035 false-alarm rate over 20,000 fair-coin sims,
 100% detection of a 49/51 bug.
 
@@ -432,7 +434,7 @@ pipeline did.
 
 ### B12. Which metrics get a CUPED covariate
 
-**The success metrics** both use `pre_exp_spend`: 39% of revenue variance, 19%
+**The success metrics** both use `pre_exp_spend`: 38% of revenue variance, 19%
 of conversion variance. Notably `pre_exp_spend` beats `pre_exp_sessions` on
 conversion too (19% vs 6%), because spend loads far more heavily on the
 frequency latent that drives conversion. Notebook 02 keeps the sessions
@@ -442,7 +444,7 @@ covariate to contrast a strong and a weak one; the engine uses the better.
 
 - *Average order value* — measured on converters only, and CUPED behind a
   post-treatment filter is **biased**, not merely less effective. With a true
-  effect of exactly zero it returns +$0.70 against a $1.18 margin (12 MC SEs
+  effect of exactly zero it returns +$0.42 against a $1.76 margin (14 MC SEs
   over 400 sims), biased *toward passing*. `MetricSpec.__post_init__` raises
   rather than documenting. See theory §3.
 - *Checkout error rate* — independent of pre-experiment behaviour by
@@ -457,13 +459,27 @@ outcome-driven selection would. The rigorous version selects on historical data
 before the experiment; that is also what CUPAC does, and it is the honest next
 step.
 
-**Worth knowing:** on seed 204 treatment happened to draw users with $1.70 more
-pre-experiment spend (+1.42 SE — chance, not a bug). θ × 1.697 = $0.0735, and
-the revenue estimate duly fell from +$0.182 to +$0.113, a drop of $0.069. CUPED
-removed a chance imbalance that was inflating the raw estimate. That is the
-second thing CUPED does, alongside variance reduction, and it is why the CUPED
-p-value on that seed is *worse* (0.032 vs 0.010) — the raw result was partly
-luck. Do not seed-shop that away; it is the best demonstration in the project.
+**What CUPED buys in the designed experiment (seed 204, 487,847/arm):**
+
+| Metric | Raw p | CUPED p | SE change | BH verdict |
+|---|---|---|---|---|
+| Conversion (primary) | 0.0016 | **0.0003** | −9% | significant either way |
+| Revenue per user | 0.136 | **0.054** | −21% | not significant either way |
+
+CUPED cut revenue's p-value by more than half and its standard error by a
+fifth, and it *still* isn't enough. That is an honest result, and it is the
+one to tell: a small lift on a heavy-tailed metric is hard to detect even with
+variance reduction. It is also exactly why the memo refuses to book a dollar
+figure on revenue.
+
+Beyond shrinking variance, CUPED also corrects any chance imbalance in the
+covariate between arms: it subtracts θ × (difference in covariate means). On
+this seed the imbalance in pre-period spend is tiny (−0.27 SE), so the
+correction barely moves the estimate (+$0.048 raw → +$0.056 adjusted). On a
+seed with a larger chance imbalance it would move it noticeably, in either
+direction. That is CUPED working as intended, not CUPED being biased: averaged
+over 400 simulations, the CUPED and raw estimates agree to within Monte Carlo
+noise.
 
 ## Part D — Software design decisions
 
@@ -552,7 +568,7 @@ it firing. See B11 and C5 below for the design reasoning.
 ### ~~E2. CUPED not wired into the decision engine~~ — **FIXED**
 Now a `covariate` field on `MetricSpec`, applied in `_metric_arrays` on the
 pooled array before the arms are split. Both success metrics use
-`pre_exp_spend` (39% of revenue variance, 19% of conversion variance). Neither
+`pre_exp_spend` (38% of revenue variance, 19% of conversion variance). Neither
 guardrail is adjusted — for two different reasons, see B12.
 
 ### E3. Fixed-horizon only — no sequential testing
