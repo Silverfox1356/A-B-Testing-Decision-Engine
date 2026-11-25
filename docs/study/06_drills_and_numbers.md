@@ -5,6 +5,73 @@ Do not try to memorize a derivation — practise producing it.
 
 ---
 
+## Part 0 — Defending your CV bullet
+
+Your CV says:
+
+> Cut **experiment runtime 39%** (14 to 8.6 days) with **CUPED**, stripping
+> variance from pre-period spend at ρ=0.62.
+
+**Every figure in it is true and reproducible.** They come from the engine at
+its *original* design, an **8% MDE**. The repo's default was later recalibrated
+to a more realistic 3%, which is why the README's headline shows 98 days.
+Notebook 02 §3 and the README table now show both designs side by side:
+
+| Design MDE | Users/arm | ρ (seed 42) | Variance removed | Days: raw → CUPED |
+|---|---|---|---|---|
+| **+8% (CV)** | 70,229 | **0.625** | **39.0%** | **14.0 → 8.6** |
+| +3% (repo default) | 487,847 | 0.611 | 37.3% | 97.6 → 61.1 |
+
+Know these four things cold. Each one is a question an interviewer can ask.
+
+**1. Why the repo says 98 days and your CV says 14.** "I first designed for an
+8% MDE. Reading Kohavi, I realized most real effects are 1–3%, so I recalibrated
+the default to 3%. That multiplies the sample size by about seven, from 14 days
+to 98. CUPED's *percentage* gain doesn't change, because it depends on ρ, not on
+the MDE: 39% at 8%, 37% at 3%. The README shows both." That's a story about
+judgment, not a discrepancy. Tell it that way.
+
+**2. ρ = 0.62 is one simulated experiment.** Across 20 random seeds, ρ is
+0.61 ± 0.015 (range 0.59–0.64) at the 8% design's sample size, so the
+*expected* reduction is 37.6% ± 1.8%. Seed 42 happened to draw 0.625 (16th of
+20, high but not unusual), which gives 39%. If pressed: "39% in
+that experiment; across seeds it's 37 ± 2%." Volunteering that is stronger
+than defending 39 as a constant.
+
+**3. What "cut runtime" means.** It is a *design-time, equal-precision*
+comparison on simulated data. CUPED makes revenue per user as precise with 61%
+of the users, so at fixed traffic the same precision arrives in 8.6 days
+instead of 14. It is not a live experiment that was stopped early.
+
+**4. The metric caveat — the one most likely to catch you.** The 39% is for
+**revenue per user**. The 14-day design is sized for **conversion**, the
+primary metric. On conversion CUPED removes less: **20%** with pre-period spend
+(the engine's covariate) and **6%** with pre-period sessions. That's because of
+the rare-binary ceiling from theory §3. So if the decision rests on conversion,
+the runtime saving is closer to 20% (14 → 11.2 days). The honest answer:
+
+> "The 39% is on revenue per user, the continuous metric. On the primary,
+> conversion, it's 20%, because a rare binary outcome caps how much any
+> covariate can explain. The runtime figure on my CV is the equal-precision
+> saving for revenue; for an experiment that ships on conversion I'd quote 20%."
+
+Say that *before* they find it. A candidate who volunteers the limit of their
+own headline number is far more credible than one who gets caught on it.
+
+**A 60-second version, start to finish:**
+
+> "I sized the experiment at 80% power. For an 8% lift on a 3.5% conversion
+> baseline that's 70,000 users per arm, about 14 days at 10,000 a day. CUPED
+> regresses out pre-period spend. On revenue per user, the correlation was 0.62
+> in that experiment, so ρ² of about 39% of the variance disappears, and the same
+> precision arrives in 8.6 days instead of 14. Two honest caveats. That's on
+> revenue; conversion only gains 20%, because rare binary outcomes cap the
+> correlation. And I later recalibrated to a more realistic 3% MDE, which pushes
+> the design to 98 days, but CUPED still removes 37%, because the percentage
+> depends on ρ, not on the effect size."
+
+---
+
 ## Part 1 — Numbers to have at your fingertips
 
 ### Design

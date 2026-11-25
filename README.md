@@ -86,6 +86,15 @@ Detecting a +3% relative lift on a 3.5% conversion baseline needs roughly 488k u
 
 CUPED removes about 37% of revenue-per-user variance. That number is not a coincidence: it matches the theoretical rho squared exactly for the realized covariate correlation of 0.61. For the rare binary conversion metric the reduction is only about 6%, which lines up with what industry writeups report.
 
+The percentage CUPED saves is set by that correlation, not by the design MDE, so it holds across designs. Notebook 02 runs both the original 8% design and the current 3% one:
+
+| Design MDE | Users per arm | ρ (one simulated experiment) | Variance removed | Runtime: raw → CUPED |
+|---|---|---|---|---|
+| +8% (original design) | 70,229 | 0.62 | 39% | 14.0 → 8.6 days |
+| +3% (current default) | 487,847 | 0.61 | 37% | 97.6 → 61.1 days |
+
+Across random seeds the correlation is about 0.61 at both sizes; a single experiment at the smaller 8% design varies more (roughly 0.59 to 0.64), so its expected saving is about 38% ± 2%.
+
 ![Raw vs CUPED confidence intervals](reports/figures/cuped_ci_comparison.png)
 
 ![Experiment duration by method](reports/figures/experiment_duration.png)

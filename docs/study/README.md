@@ -12,6 +12,10 @@ An earlier version of the project used an optimistic 8% MDE (70,229 users/arm,
 calibration and kept on purpose, because how the numbers changed is itself
 worth understanding (see `02_theory.md`, "Guardrail power is expensive").
 
+**Your CV uses the original 8% figures** (39%, 14 → 8.6 days, ρ = 0.62). They
+are true and reproducible; `06_drills_and_numbers.md` Part 0 shows how to
+defend them, including the one caveat most likely to be probed.
+
 Read in order:
 
 | File | What it covers |

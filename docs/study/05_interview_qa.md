@@ -73,6 +73,29 @@ Legend: 🟢 basic · 🟡 intermediate · 🔴 hard / likely to separate candid
 
 ---
 
+**🔴 Q5b. Your CV says 14 days but your README says 98. Which is it?**
+> Both, at different design points. I originally designed for an 8% MDE, which
+> needs 70,229 users per arm, about 14 days at 10,000 users a day. Then I
+> recalibrated to 3%, because real winning tests mostly lift by 1 to 3 percent,
+> and that needs 488,000 per arm, about 98 days. The README and notebook 02 show
+> both. CUPED removes 39% at the first design and 37% at the second, because the
+> saving depends on the covariate's correlation, not on the effect size.
+
+**🔴 Q5c. Your primary metric is conversion. How did CUPED cut the experiment's
+runtime by 39%?** *(the question most likely to catch you — rehearse it)*
+> The 39% is on revenue per user. On conversion it's 20% with pre-period spend
+> as the covariate, because a rare binary outcome caps how much any covariate
+> can explain: most of its variance is irreducible Bernoulli noise. So the
+> runtime figure is the equal-precision saving for revenue. For an experiment
+> that ships on conversion, I'd quote 20%, 14 down to 11.2 days.
+
+**🟡 Q5d. Is 39% a stable number?**
+> It's one simulated experiment. ρ came out at 0.625 on that seed; across seeds
+> it's 0.61 plus or minus 0.015 at that sample size, so the expected saving is
+> 37.6%, give or take about 2. Seed 42 was 16th of 20, on the high side but
+> not unusual. At the larger 3% design the spread
+> tightens to about ±0.005.
+
 ## Section 2 — Power analysis
 
 **🟢 Q6. What is statistical power?**
